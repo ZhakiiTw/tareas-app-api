@@ -19,4 +19,7 @@ public class TareaCreacionDTO {
     private LocalDate fecha;
 
     private Boolean completada = false;
+
+    @NotNull(message = "El tipo de tarea es obligatorio")
+    private Long tipoTareaId;
 }

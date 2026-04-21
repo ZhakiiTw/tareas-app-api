@@ -17,4 +17,6 @@ public class TareaActualizacionDTO {
     private LocalDate fecha;
 
     private Boolean completada;
+
+    private Long tipoTareaId;
 }

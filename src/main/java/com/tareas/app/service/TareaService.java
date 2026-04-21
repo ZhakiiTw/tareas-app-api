@@ -5,8 +5,10 @@ import com.tareas.app.dto.TareaCreacionDTO;
 import com.tareas.app.dto.TareaDTO;
 import com.tareas.app.exception.ResourceNotFoundException;
 import com.tareas.app.model.Tarea;
+import com.tareas.app.model.TipoTarea;
 import com.tareas.app.model.Usuario;
 import com.tareas.app.repository.TareaRepository;
+import com.tareas.app.repository.TipoTareaRepository;
 import com.tareas.app.repository.UsuarioRepository;
 import com.tareas.app.service.util.MapeadorService;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +27,7 @@ public class TareaService {
     private final TareaRepository tareaRepository;
     private final UsuarioRepository usuarioRepository;
     private final MapeadorService mapeadorService;
+    private final TipoTareaRepository tipoTareaRepository;
 
     public List<TareaDTO> listarPorUsuario(String email) {
         log.info("=== LISTANDO TAREAS DEL USUARIO: {} ===", email);
@@ -43,7 +46,10 @@ public class TareaService {
         Usuario usuario = usuarioRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado"));
 
-        Tarea nuevaTarea = mapeadorService.toTareaEntity(dto, usuario);
+        TipoTarea tipoTarea = tipoTareaRepository.findByIdAndUsuarioEmail(dto.getTipoTareaId(), email)
+                .orElseThrow(() -> new ResourceNotFoundException("Tipo de tarea no encontrado para este usuario"));
+
+        Tarea nuevaTarea = mapeadorService.toTareaEntity(dto, usuario, tipoTarea);
         Tarea tareaGuardada = tareaRepository.save(nuevaTarea);
 
         log.info("✅ Tarea creada - ID: {}", tareaGuardada.getId());
@@ -62,6 +68,12 @@ public class TareaService {
         if (dto.getDescripcion() != null) tarea.setDescripcion(dto.getDescripcion());
         if (dto.getFecha() != null) tarea.setFecha(dto.getFecha());
         if (dto.getCompletada() != null) tarea.setCompletada(dto.getCompletada());
+
+        if (dto.getTipoTareaId() != null) {
+            TipoTarea tipoTarea = tipoTareaRepository.findByIdAndUsuarioEmail(dto.getTipoTareaId(), email)
+                    .orElseThrow(() -> new ResourceNotFoundException("Tipo de tarea no encontrado para este usuario"));
+            tarea.setTipoTarea(tipoTarea);
+        }
 
         Tarea tareaActualizada = tareaRepository.save(tarea);
         log.info("✅ Tarea actualizada - ID: {}", tareaActualizada.getId());

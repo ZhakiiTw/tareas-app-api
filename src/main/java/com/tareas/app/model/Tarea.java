@@ -34,4 +34,9 @@ public class Tarea {
     @ManyToOne
     @JoinColumn(name = "usuario_id", nullable = false)
     private Usuario usuario;
+
+    @NotNull(message = "El tipo de tarea es obligatorio")
+    @ManyToOne
+    @JoinColumn(name = "tipo_tarea_id", nullable = false)
+    private TipoTarea tipoTarea;
 }
