@@ -33,7 +33,7 @@ dependencies {
 
     // Base de datos
     runtimeOnly 'com.h2database:h2'
-    runtimeOnly 'org.postgresql:postgresql'
+    implementation 'org.postgresql:postgresql'
 
     // TEST Solo se necesita spring-boot-starter-test
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
