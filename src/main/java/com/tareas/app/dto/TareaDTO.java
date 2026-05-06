@@ -15,8 +15,9 @@ public class TareaDTO {
     private String descripcion;
     private LocalDate fecha;
     private Boolean completada;
-    private Long usuarioId; // Enviamos solo el ID del usuario, no el objeto entero
+    private Integer urgencia;
+    private Long usuarioId;
     private Long tipoTareaId;
-    private String tipoTareaNombre; // Aqui las tres funcionalidades del Tipo de Tarea
+    private String tipoTareaNombre;
     private String tipoTareaColor;
 }

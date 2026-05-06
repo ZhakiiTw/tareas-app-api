@@ -52,7 +52,7 @@ public class TareaService {
         Tarea nuevaTarea = mapeadorService.toTareaEntity(dto, usuario, tipoTarea);
         Tarea tareaGuardada = tareaRepository.save(nuevaTarea);
 
-        log.info("✅ Tarea creada - ID: {}", tareaGuardada.getId());
+        log.info("Tarea creada - ID: {}", tareaGuardada.getId());
         return mapeadorService.toTareaDTO(tareaGuardada);
     }
 
@@ -60,7 +60,7 @@ public class TareaService {
     public TareaDTO actualizarTareaParcial(Long id, TareaActualizacionDTO dto, String email) {
         log.info("=== ACTUALIZANDO TAREA ID: {} ===", id);
 
-        // ✅ Solo si la tarea pertenece al usuario
+        // Solo si la tarea pertenece al usuario
         Tarea tarea = tareaRepository.findByIdAndUsuarioEmail(id, email)
                 .orElseThrow(() -> new ResourceNotFoundException("Tarea no encontrada para este usuario"));
 
@@ -68,6 +68,7 @@ public class TareaService {
         if (dto.getDescripcion() != null) tarea.setDescripcion(dto.getDescripcion());
         if (dto.getFecha() != null) tarea.setFecha(dto.getFecha());
         if (dto.getCompletada() != null) tarea.setCompletada(dto.getCompletada());
+        if (dto.getUrgencia() != null) tarea.setUrgencia(dto.getUrgencia());
 
         if (dto.getTipoTareaId() != null) {
             TipoTarea tipoTarea = tipoTareaRepository.findByIdAndUsuarioEmail(dto.getTipoTareaId(), email)
@@ -76,7 +77,7 @@ public class TareaService {
         }
 
         Tarea tareaActualizada = tareaRepository.save(tarea);
-        log.info("✅ Tarea actualizada - ID: {}", tareaActualizada.getId());
+        log.info("Tarea actualizada - ID: {}", tareaActualizada.getId());
 
         return mapeadorService.toTareaDTO(tareaActualizada);
     }
@@ -90,6 +91,6 @@ public class TareaService {
         }
 
         tareaRepository.deleteByIdAndUsuarioEmail(id, email);
-        log.info("✅ Tarea eliminada - ID: {}", id);
+        log.info("Tarea eliminada - ID: {}", id);
     }
 }

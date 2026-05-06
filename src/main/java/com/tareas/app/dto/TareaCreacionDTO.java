@@ -20,6 +20,10 @@ public class TareaCreacionDTO {
 
     private Boolean completada = false;
 
+    @Min(value = 0, message = "La urgencia mínima es 0")
+    @Max(value = 2, message = "La urgencia máxima es 2")
+    private Integer urgencia = 0;
+
     @NotNull(message = "El tipo de tarea es obligatorio")
     private Long tipoTareaId;
 }

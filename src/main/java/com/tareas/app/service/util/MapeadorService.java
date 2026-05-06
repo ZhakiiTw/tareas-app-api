@@ -35,6 +35,7 @@ public class MapeadorService {
                 tarea.getDescripcion(),
                 tarea.getFecha(),
                 tarea.getCompletada(),
+                tarea.getUrgencia(),
                 tarea.getUsuario() != null ? tarea.getUsuario().getId() : null,
                 tarea.getTipoTarea() != null ? tarea.getTipoTarea().getId() : null,
                 tarea.getTipoTarea() != null ? tarea.getTipoTarea().getNombre() : null,
@@ -46,12 +47,14 @@ public class MapeadorService {
         if (dto == null) return null;
 
         Boolean completada = dto.getCompletada() != null ? dto.getCompletada() : false;
+        Integer urgencia = dto.getUrgencia() != null ? dto.getUrgencia() : 0;
 
         return Tarea.builder()
                 .titulo(dto.getTitulo())
                 .descripcion(dto.getDescripcion())
                 .fecha(dto.getFecha())
                 .completada(completada)
+                .urgencia(urgencia)
                 .usuario(usuario)
                 .tipoTarea(tipoTarea)
                 .build();

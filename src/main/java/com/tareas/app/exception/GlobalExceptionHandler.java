@@ -28,7 +28,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleNotFound(ResourceNotFoundException ex) {
-        log.error("❌ Not found: {}", ex.getMessage());
+        log.error("Not found: {}", ex.getMessage());
         Map<String, Object> r = base(HttpStatus.NOT_FOUND);
         r.put("message", ex.getMessage());
         return new ResponseEntity<>(r, HttpStatus.NOT_FOUND);
@@ -36,7 +36,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ResourceConflictException.class)
     public ResponseEntity<Map<String, Object>> handleConflict(ResourceConflictException ex) {
-        log.error("❌ Conflict: {}", ex.getMessage());
+        log.error("Conflict: {}", ex.getMessage());
         Map<String, Object> r = base(HttpStatus.CONFLICT);
         r.put("message", ex.getMessage());
         return new ResponseEntity<>(r, HttpStatus.CONFLICT);
@@ -44,7 +44,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
-        log.error("❌ Error de validación");
+        log.error("Error de validación");
         Map<String, String> errors = new HashMap<>();
 
         ex.getBindingResult().getAllErrors().forEach(err -> {
@@ -59,7 +59,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<Map<String, Object>> handleBadCredentials(BadCredentialsException ex) {
-        log.warn("❌ Bad credentials: {}", ex.getMessage());
+        log.warn("Bad credentials: {}", ex.getMessage());
         Map<String, Object> r = base(HttpStatus.UNAUTHORIZED);
         r.put("message", "Credenciales inválidas");
         return new ResponseEntity<>(r, HttpStatus.UNAUTHORIZED);
@@ -67,7 +67,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException ex) {
-        log.warn("❌ Forbidden: {}", ex.getMessage());
+        log.warn("Forbidden: {}", ex.getMessage());
         Map<String, Object> r = base(HttpStatus.FORBIDDEN);
         r.put("message", "No tienes permisos para acceder a este recurso");
         return new ResponseEntity<>(r, HttpStatus.FORBIDDEN);
@@ -75,7 +75,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneric(Exception ex) {
-        log.error("❌ Error inesperado: {}", ex.getMessage(), ex);
+        log.error("Error inesperado: {}", ex.getMessage(), ex);
         Map<String, Object> r = base(HttpStatus.INTERNAL_SERVER_ERROR);
         r.put("message", "Ha ocurrido un error interno");
         return new ResponseEntity<>(r, HttpStatus.INTERNAL_SERVER_ERROR);

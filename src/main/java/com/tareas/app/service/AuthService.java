@@ -47,7 +47,7 @@ public class AuthService {
                 .build();
 
         Usuario usuarioGuardado = usuarioRepository.save(nuevoUsuario);
-        log.info("✅ Usuario registrado ID: {}", usuarioGuardado.getId());
+        log.info("Usuario registrado ID: {}", usuarioGuardado.getId());
 
         return mapeadorService.toUsuarioDTO(usuarioGuardado);
     }
@@ -68,7 +68,6 @@ public class AuthService {
 
         return new LoginResponseDTO(
                 token,
-                "Bearer",
                 usuario.getId(),
                 usuario.getUsername(),
                 usuario.getEmail()

@@ -2,6 +2,7 @@ package com.tareas.app.config;
 
 import com.tareas.app.security.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -21,6 +22,9 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthFilter;
 
+    @Value("${app.h2-console.enabled:false}")
+    private boolean h2ConsoleEnabled;
+
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
@@ -33,19 +37,33 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+
         http
                 .csrf(csrf -> csrf.disable())
-                .sessionManagement(session -> session
-                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                .sessionManagement(session ->
+                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/h2-console/**", "/auth/**", "/error").permitAll()
-                        .anyRequest().authenticated()
-                )
-                .headers(headers -> headers
-                        .frameOptions(frameOptions -> frameOptions.sameOrigin())
-                )
+                .authorizeHttpRequests(auth -> {
+
+                    // Endpoints públicos
+                    auth.requestMatchers("/auth/**", "/error").permitAll();
+
+                    // H2 solo si está activado (dev)
+                    if (h2ConsoleEnabled) {
+                        auth.requestMatchers("/h2-console/**").permitAll();
+                    }
+
+                    // Todo lo demás requiere autenticación
+                    auth.anyRequest().authenticated();
+                })
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+
+        // Necesario para que funcione H2 console (solo dev)
+        if (h2ConsoleEnabled) {
+            http.headers(headers ->
+                    headers.frameOptions(frameOptions -> frameOptions.sameOrigin())
+            );
+        }
 
         return http.build();
     }

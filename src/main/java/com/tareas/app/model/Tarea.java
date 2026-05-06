@@ -30,6 +30,12 @@ public class Tarea {
     @Builder.Default
     private Boolean completada = false;
 
+    @Min(value = 0, message = "La urgencia mínima es 0")
+    @Max(value = 2, message = "La urgencia máxima es 2")
+    @Column(nullable = false)
+    @Builder.Default
+    private Integer urgencia = 0;
+
     @NotNull(message = "El usuario es obligatorio")
     @ManyToOne
     @JoinColumn(name = "usuario_id", nullable = false)

@@ -18,5 +18,9 @@ public class TareaActualizacionDTO {
 
     private Boolean completada;
 
+    @Min(value = 0, message = "La urgencia mínima es 0")
+    @Max(value = 2, message = "La urgencia máxima es 2")
+    private Integer urgencia;
+
     private Long tipoTareaId;
 }

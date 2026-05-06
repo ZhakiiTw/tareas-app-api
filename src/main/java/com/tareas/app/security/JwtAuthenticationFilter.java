@@ -69,13 +69,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             new WebAuthenticationDetailsSource().buildDetails(request)
                     );
                     SecurityContextHolder.getContext().setAuthentication(authToken);
-                    log.info("✅ Usuario autenticado con token: {}", username);
+                    log.info("Usuario autenticado con token: {}", username);
                 } else {
                     log.warn("Token inválido para usuario: {}", username);
                 }
             }
         } catch (Exception e) {
-            log.error("❌ Error procesando token JWT: {}", e.getMessage());
+            log.error("Error procesando token JWT: {}", e.getMessage());
         }
 
         filterChain.doFilter(request, response);
