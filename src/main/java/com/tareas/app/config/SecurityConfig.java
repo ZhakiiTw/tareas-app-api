@@ -46,7 +46,13 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> {
 
                     // Endpoints públicos
-                    auth.requestMatchers("/auth/**", "/error").permitAll();
+                    auth.requestMatchers(
+                            "/auth/**",
+                            "/error",
+                            "/swagger-ui/**",
+                            "/swagger-ui.html",
+                            "/v3/api-docs/**"
+                    ).permitAll();
 
                     // H2 solo si está activado (dev)
                     if (h2ConsoleEnabled) {
