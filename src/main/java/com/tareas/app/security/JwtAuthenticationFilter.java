@@ -44,13 +44,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         if (!authHeader.startsWith("Bearer ")) {
-            log.warn("Header Authorization no comienza con Bearer: {}", authHeader);
+            log.warn("Header Authorization no comienza con Bearer");
             filterChain.doFilter(request, response);
             return;
         }
 
         jwt = authHeader.substring(7);
-        log.debug("Token JWT recibido: {}...", jwt.substring(0, Math.min(20, jwt.length())));
+        log.debug("Token JWT recibido para validacion");
 
         try {
             username = jwtService.extractUsername(jwt);
@@ -69,7 +69,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             new WebAuthenticationDetailsSource().buildDetails(request)
                     );
                     SecurityContextHolder.getContext().setAuthentication(authToken);
-                    log.info("Usuario autenticado con token: {}", username);
+                    log.info("Usuario autenticado: {}", username);
                 } else {
                     log.warn("Token inválido para usuario: {}", username);
                 }

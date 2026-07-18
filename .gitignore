@@ -1,9 +1,16 @@
 HELP.md
-.gradle
+.gradle/
 build/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/
+
+### Local deployment ###
+.env
+.env.*
+!.env.example
+logs/
+backups/
 
 ### STS ###
 .apt_generated
@@ -18,7 +25,7 @@ bin/
 !**/src/test/**/bin/
 
 ### IntelliJ IDEA ###
-.idea
+.idea/
 *.iws
 *.iml
 *.ipr
