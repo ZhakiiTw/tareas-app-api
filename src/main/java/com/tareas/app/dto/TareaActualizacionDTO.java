@@ -13,7 +13,6 @@ public class TareaActualizacionDTO {
     @Size(max = 500, message = "La descripción no puede exceder 500 caracteres")
     private String descripcion;
 
-    @FutureOrPresent(message = "La fecha debe ser futura o presente")
     private LocalDate fecha;
 
     private Boolean completada;

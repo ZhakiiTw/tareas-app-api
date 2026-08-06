@@ -4,6 +4,7 @@ import com.tareas.app.dto.TareaActualizacionDTO;
 import com.tareas.app.dto.TareaCreacionDTO;
 import com.tareas.app.dto.TareaDTO;
 import com.tareas.app.exception.ResourceNotFoundException;
+import com.tareas.app.exception.ValidacionException;
 import com.tareas.app.model.Tarea;
 import com.tareas.app.model.TipoTarea;
 import com.tareas.app.model.Usuario;
@@ -16,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -60,13 +62,14 @@ public class TareaService {
     public TareaDTO actualizarTareaParcial(Long id, TareaActualizacionDTO dto, String email) {
         log.info("=== ACTUALIZANDO TAREA ID: {} ===", id);
 
-        // Solo si la tarea pertenece al usuario
-        Tarea tarea = tareaRepository.findByIdAndUsuarioEmail(id, email)
-                .orElseThrow(() -> new ResourceNotFoundException("Tarea no encontrada para este usuario"));
+        Tarea tarea = obtenerTareaDeUsuario(id, email);
 
         if (dto.getTitulo() != null) tarea.setTitulo(dto.getTitulo());
         if (dto.getDescripcion() != null) tarea.setDescripcion(dto.getDescripcion());
-        if (dto.getFecha() != null) tarea.setFecha(dto.getFecha());
+        if (dto.getFecha() != null) {
+            validarNuevaFecha(dto.getFecha(), tarea.getFecha());
+            tarea.setFecha(dto.getFecha());
+        }
         if (dto.getCompletada() != null) tarea.setCompletada(dto.getCompletada());
         if (dto.getUrgencia() != null) tarea.setUrgencia(dto.getUrgencia());
 
@@ -80,6 +83,43 @@ public class TareaService {
         log.info("Tarea actualizada - ID: {}", tareaActualizada.getId());
 
         return mapeadorService.toTareaDTO(tareaActualizada);
+    }
+
+    @Transactional
+    public TareaDTO completarTarea(Long id, String email) {
+        log.info("=== COMPLETANDO TAREA ID: {} ===", id);
+
+        Tarea tarea = obtenerTareaDeUsuario(id, email);
+        tarea.setCompletada(true);
+
+        Tarea tareaGuardada = tareaRepository.save(tarea);
+        log.info("Tarea completada - ID: {}", tareaGuardada.getId());
+
+        return mapeadorService.toTareaDTO(tareaGuardada);
+    }
+
+    @Transactional
+    public TareaDTO reabrirTarea(Long id, String email) {
+        log.info("=== REABRIENDO TAREA ID: {} ===", id);
+
+        Tarea tarea = obtenerTareaDeUsuario(id, email);
+        tarea.setCompletada(false);
+
+        Tarea tareaGuardada = tareaRepository.save(tarea);
+        log.info("Tarea reabierta - ID: {}", tareaGuardada.getId());
+
+        return mapeadorService.toTareaDTO(tareaGuardada);
+    }
+
+    private Tarea obtenerTareaDeUsuario(Long id, String email) {
+        return tareaRepository.findByIdAndUsuarioEmail(id, email)
+                .orElseThrow(() -> new ResourceNotFoundException("Tarea no encontrada para este usuario"));
+    }
+
+    private void validarNuevaFecha(LocalDate nuevaFecha, LocalDate fechaActual) {
+        if (nuevaFecha.isBefore(LocalDate.now()) && !nuevaFecha.equals(fechaActual)) {
+            throw new ValidacionException("fecha", "La nueva fecha debe ser futura o presente");
+        }
     }
 
     @Transactional

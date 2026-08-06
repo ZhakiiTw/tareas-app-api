@@ -42,6 +42,17 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(r, HttpStatus.CONFLICT);
     }
 
+    @ExceptionHandler(ValidacionException.class)
+    public ResponseEntity<Map<String, Object>> handleValidacion(ValidacionException ex) {
+        log.error("Error de validación: {}", ex.getMessage());
+        Map<String, String> errors = new HashMap<>();
+        errors.put(ex.getField(), ex.getMessage());
+
+        Map<String, Object> r = base(HttpStatus.BAD_REQUEST);
+        r.put("errors", errors);
+        return new ResponseEntity<>(r, HttpStatus.BAD_REQUEST);
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
         log.error("Error de validación");

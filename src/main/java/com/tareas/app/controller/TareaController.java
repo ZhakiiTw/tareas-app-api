@@ -63,10 +63,7 @@ public class TareaController {
         String email = userDetails.getUsername();
         log.info("Petición completar tarea ID: {} - usuario: {}", id, email);
 
-        TareaActualizacionDTO dto = new TareaActualizacionDTO();
-        dto.setCompletada(true);
-
-        return ResponseEntity.ok(tareaService.actualizarTareaParcial(id, dto, email));
+        return ResponseEntity.ok(tareaService.completarTarea(id, email));
     }
 
     @PatchMapping("/{id}/reabrir")
@@ -77,10 +74,7 @@ public class TareaController {
         String email = userDetails.getUsername();
         log.info("Petición reabrir tarea ID: {} - usuario: {}", id, email);
 
-        TareaActualizacionDTO dto = new TareaActualizacionDTO();
-        dto.setCompletada(false);
-
-        return ResponseEntity.ok(tareaService.actualizarTareaParcial(id, dto, email));
+        return ResponseEntity.ok(tareaService.reabrirTarea(id, email));
     }
 
     @DeleteMapping("/{id}")
