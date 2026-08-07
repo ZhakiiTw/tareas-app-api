@@ -3,8 +3,9 @@
 #
 # Ejecuta:
 #   1. Generacion del SBOM CycloneDX (todas las dependencias directas y transitivas)
-#   2. OWASP Dependency-Check (requiere NVD_API_KEY para actualizar la base NVD)
-#   3. OSV-Scanner via contenedor oficial ghcr.io/google/osv-scanner (fijado a v2.4.0)
+#   2. Actualizacion de la base NVD (dependencyCheckUpdate, requiere NVD_API_KEY)
+#   3. OWASP Dependency-Check con autoUpdate=false (analiza la base NVD local)
+#   4. OSV-Scanner via contenedor oficial ghcr.io/google/osv-scanner (fijado a v2.4.0)
 #
 # No modifica dependencias, no toca produccion y no imprime secretos.
 # Si no hay NVD_API_KEY, Dependency-Check se marca como OMITIDO y el script devuelve
@@ -33,15 +34,22 @@ echo "==> [1/3] Generando SBOM CycloneDX"
 echo "==> [2/3] OWASP Dependency-Check"
 if [ -z "${NVD_API_KEY:-}" ]; then
     dc_state="OMITIDO"
-    echo "AVISO: NVD_API_KEY no esta definida. Dependency-Check 13.x no puede actualizar la base NVD"
-    echo "       sin una clave (limitacion documentada). Se omite este paso; exporte NVD_API_KEY"
-    echo "       y ejecute './gradlew dependencyCheckAnalyze' para completarlo."
-elif ./gradlew dependencyCheckAnalyze --console=plain; then
+    echo "AVISO: NVD_API_KEY no esta definida. Con autoUpdate=false, Dependency-Check analiza"
+    echo "       unicamente la base NVD local. Exporte NVD_API_KEY y ejecute una vez"
+    echo "       './gradlew dependencyCheckUpdate' para descargarla, y luego relance este script"
+    echo "       para completar el analisis."
+elif ! ./gradlew dependencyCheckUpdate --console=plain 2>&1 | tee "$DC_DIR/dependency-check-update.log"; then
+    dc_state="FALLIDO"
+    echo "ERROR: la actualizacion de la base NVD fallo (dependencyCheckUpdate). No se analiza." >&2
+    echo "       Detalle en $DC_DIR/dependency-check-update.log" >&2
+    fail=1
+elif ./gradlew dependencyCheckAnalyze --console=plain 2>&1 | tee "$DC_DIR/dependency-check.log"; then
     dc_state="OK"
     echo "OK: Dependency-Check sin vulnerabilidades >= CVSS 9.0"
 else
     dc_state="FALLIDO"
-    echo "ERROR: Dependency-Check reporto una vulnerabilidad critica (CVSS >= 9.0) o fallo." >&2
+    echo "ERROR: Dependency-Check fallo o reporto una vulnerabilidad critica (CVSS >= 9.0)." >&2
+    echo "       Detalle en $DC_DIR/dependency-check.log" >&2
     fail=1
 fi
 

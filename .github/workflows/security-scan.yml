@@ -1,23 +1,26 @@
 name: security-scan
 
+# Analisis de seguridad de cada Pull Request. NO descarga NVD: restaura la cache
+# generada por el workflow nvd-database-update.yml (la base NVD se actualiza por
+# separado y con cache). Si no hay cache NVD valida, el job FALLA de forma clara.
+#
+# Flujo: restore cache NVD -> verificar cache -> SBOM -> Dependency-Check (sin
+# actualizar NVD) -> OSV-Scanner -> tests -> build.
+
 on:
   pull_request:
   push:
     branches: [master]
-  schedule:
-    - cron: '0 3 * * 1'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-env:
-  NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-
 jobs:
   security-scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Con la cache caliente el analisis dura segundos/minutos; timeout corto a proposito.
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,35 +40,46 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle', '**/gradle-wrapper.properties') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      - name: Cache Dependency-Check NVD data
-        uses: actions/cache@v4
+      - name: Extract Dependency-Check version
+        id: dc-version
+        run: |
+          VERSION=$(sed -n "s/.*org\.owasp\.dependencycheck' version '\([0-9][0-9.]*\)'.*/\1/p" build.gradle)
+          if [ -z "$VERSION" ]; then
+            echo "ERROR: no se pudo extraer la version del plugin org.owasp.dependencycheck de build.gradle" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Dependency-Check NVD cache
+        id: nvd-restore
+        uses: actions/cache/restore@v4
         with:
           path: ~/.gradle/dependency-check-data
-          key: dependency-check-${{ runner.os }}
-          restore-keys: dependency-check-${{ runner.os }}-
+          # La key exacta nunca coincide (incluye run_id/run_attempt de esta ejecucion);
+          # restore-keys restaura la cache NVD mas reciente guardada por nvd-database-update.
+          # fail-on-cache-miss=true: si NO existe cache NVD, el job falla (fail-closed).
+          key: dependency-check-${{ runner.os }}-${{ steps.dc-version.outputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            dependency-check-${{ runner.os }}-${{ steps.dc-version.outputs.version }}-
+            dependency-check-${{ runner.os }}-
+          fail-on-cache-miss: true
+
+      - name: Verify NVD database cache is available
+        run: |
+          DB=$(find "$HOME/.gradle/dependency-check-data" -name 'odc.mv.db' -size +1M -print -quit 2>/dev/null)
+          if [ -z "$DB" ]; then
+            echo "::error::Dependency-Check NVD database cache is unavailable. Run the NVD update workflow."
+            exit 1
+          fi
+          echo "NVD database cache OK: $DB"
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Tests
-        run: ./gradlew test --console=plain
-
-      - name: Build
-        run: ./gradlew build --console=plain
-
       - name: SBOM CycloneDX
         run: ./gradlew cyclonedxDirectBom --console=plain
 
-      - name: Check NVD API key availability
-        shell: bash
-        run: |
-          if [ -z "$NVD_API_KEY" ]; then
-            echo "NVD_API_KEY is NOT available"
-            exit 1
-          fi
-          echo "NVD_API_KEY is available"
-
-      - name: OWASP Dependency-Check
+      - name: OWASP Dependency-Check (autoUpdate disabled, uses cached NVD)
         run: ./gradlew dependencyCheckAnalyze --console=plain
 
       - name: OSV-Scanner (contained)
@@ -77,6 +91,12 @@ jobs:
             --experimental-exclude=/src/build --experimental-exclude=/src/.gradle \
             --format=json --output-file=/src/build/reports/osv-scanner/osv-results.json \
             /src/build/reports/cyclonedx-direct/bom.json
+
+      - name: Tests
+        run: ./gradlew test --console=plain
+
+      - name: Build
+        run: ./gradlew build --console=plain
 
       - name: Upload reports
         if: always()

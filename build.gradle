@@ -73,16 +73,57 @@ tasks.named('test') {
     useJUnitPlatform()
 }
 
-// Escaneo de vulnerabilidades de dependencias (OWASP Dependency-Check)
-// Uso: ./gradlew dependencyCheckAnalyze
-// La clave NVD se lee automaticamente de la variable de entorno NVD_API_KEY (nunca se versiona).
+// Escaneo de vulnerabilidades de dependencias (OWASP Dependency-Check).
+//
+// Separacion de responsabilidades en CI (dos workflows):
+//   1. ACTUALIZACION NVD -> ./gradlew dependencyCheckUpdate   (.github/workflows/nvd-update.yml)
+//      - Descarga/actualiza la base NVD y el resto de fuentes externas (KEV, suppressions, ...).
+//      - Requiere NVD_API_KEY (se lee de la variable de entorno, nunca se versiona).
+//      - En CI, su cache se guarda SOLO si la tarea termina con exit 0.
+//   2. ANALISIS           -> ./gradlew dependencyCheckAnalyze (.github/workflows/security-scan.yml)
+//      - autoUpdate = false: usa unicamente la base local. Nunca descarga NVD en un PR.
+//      - Si la base local no existe, la tarea falla de forma explicita (fail-closed).
+//
+// Data directory: ruta unica y estable bajo GRADLE_USER_HOME (default ~/.gradle), que es la
+//   ubicacion oficial por defecto del plugin:
+//     <GRADLE_USER_HOME>/dependency-check-data/<schema_version>  (actualmente .../11.0).
+//   - La subcarpeta <schema_version> la anade el propio plugin, de modo que al cambiar de version
+//     (o schema) se usa un directorio nuevo sin corromper la base existente.
+//   - En GitHub Actions GRADLE_USER_HOME es ~/.gradle, por lo que la cache de los workflows apunta
+//     a ~/.gradle/dependency-check-data (ver .github/workflows/nvd-update.yml y security-scan.yml).
+//   - No se versiona (ver .gitignore) y no contiene secretos.
+def dcGradleUserHome = System.getenv('GRADLE_USER_HOME') ?: "${System.getProperty('user.home')}/.gradle"
+
 dependencyCheck {
     formats = ['HTML', 'JSON']
     outputDirectory = layout.buildDirectory.dir('reports/dependency-check')
     failBuildOnCVSS = 9.0
 
+    // El analisis NUNCA descarga/actualiza NVD. La base la refresca el workflow de actualizacion
+    // (nvd-update.yml) mediante la tarea dependencyCheckUpdate, y los PRs la restauran desde cache.
+    // Si no hay base local valida, dependencyCheckAnalyze falla (no se esconde el error).
+    autoUpdate = false
+
+    data.directory = "${dcGradleUserHome}/dependency-check-data"
+
     nvd {
         apiKey = System.getenv('NVD_API_KEY')
+
+        // Tolerancia conservadora ante fallos temporales (HTTP 503/429) de la API NVD.
+        // delay: milisegundos entre llamadas a la API NVD. El default es 3500 (con key) / 8000
+        //        (sin key). Subirlo a 5000 reduce la probabilidad de provocar 503 por rate-limit
+        //        (la propia doc de NVD recomienda subir el delay ante 503 con key valida).
+        delay = 5000
+
+        // maxRetryCount: reintentos por cada llamada a la API antes de abandonar (default 10).
+        //        No son reintentos agresivos: cada reintento respeta `delay`. Al agotarlos, la
+        //        actualizacion falla y el workflow de actualizacion NO guarda la cache parcial.
+        maxRetryCount = 10
+
+        // validForHours: horas que espera antes de comprobar actualizaciones de NVD (default 4).
+        //        Con la actualizacion semanal, si la ultima actualizacion tiene < 4 h no se
+        //        re-descarga; en caso contrario se actualiza de forma incremental.
+        validForHours = 4
     }
 }
 
