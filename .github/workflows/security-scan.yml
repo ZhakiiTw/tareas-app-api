@@ -56,6 +56,15 @@ jobs:
       - name: SBOM CycloneDX
         run: ./gradlew cyclonedxDirectBom --console=plain
 
+      - name: Check NVD API key availability
+        shell: bash
+        run: |
+          if [ -z "$NVD_API_KEY" ]; then
+            echo "NVD_API_KEY is NOT available"
+            exit 1
+          fi
+          echo "NVD_API_KEY is available"
+
       - name: OWASP Dependency-Check
         run: ./gradlew dependencyCheckAnalyze --console=plain
 
