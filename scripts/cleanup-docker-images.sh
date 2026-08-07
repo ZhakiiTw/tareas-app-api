@@ -76,21 +76,6 @@ size_to_mb() {
   esac
 }
 
-unique_size_mb_of_id() {
-  local id12="$1" raw
-
-  raw="$(
-    docker system df -v 2>/dev/null |
-      awk -v r="${REPOSITORY}" -v id="${id12}" '
-        $1 == r && $3 == id { print $7; exit }
-      '
-  )"
-
-  [[ -n "${raw}" ]] || return 1
-
-  size_to_mb "${raw}"
-}
-
 log_apply() { printf '%s %s\n' "$(date -Is)" "$*" >> "${LOG_FILE}"; }
 
 index_of_id() {
@@ -345,8 +330,9 @@ print_classification() {
 }
 
 print_summary() {
-  local p=0 k=0 c=0 i apparent=0 unique=0 have_unique=1
+  local p=0 k=0 c=0 i apparent=0
   local -a cidx=()
+
   for i in "${!CAT[@]}"; do
     case "${CAT[$i]}" in
       PROTECTED) (( p++ )) ;;
@@ -354,19 +340,20 @@ print_summary() {
       CANDIDATE) (( c++ )) ;;
     esac
   done
+
   for i in "${!CAT[@]}"; do
     [[ "${CAT[$i]}" == "CANDIDATE" ]] && cidx+=("$i")
   done
+
   for i in "${cidx[@]}"; do
-    apparent="$(awk -v a="${apparent}" -v s="$(size_to_mb "${IMG_SIZE[$i]}")" 'BEGIN{printf "%.1f", a+s}')"
-    local u
-    u="$(unique_size_mb_of_id "${IMG_IDS[$i]:0:12}")"
-    if [[ -z "${u}" ]]; then
-      have_unique=0
-    else
-      unique="$(awk -v a="${unique}" -v s="${u}" 'BEGIN{printf "%.1f", a+s}')"
-    fi
+    apparent="$(
+      awk \
+        -v a="${apparent}" \
+        -v s="$(size_to_mb "${IMG_SIZE[$i]}")" \
+        'BEGIN { printf "%.1f", a + s }'
+    )"
   done
+
   echo "===== Resumen ====="
   echo "Repository: ${REPOSITORY}"
   echo "Mode: ${MODE}"
@@ -375,11 +362,8 @@ print_summary() {
   echo "Keep: ${k}"
   echo "Candidates: ${c}"
   echo "Tamano aparente candidatos (incluye capas compartidas): ~${apparent} MB"
-  if (( have_unique )); then
-    echo "Estimacion real recuperable (capas unicas, via 'docker system df -v'): ~${unique} MB"
-  else
-    echo "Estimacion real recuperable: no determinada (capas compartidas; el espacio real es menor que el aparente)"
-  fi
+  echo "Espacio real recuperable: no determinado por adelantado debido a capas compartidas."
+  echo "Comprobar con 'docker system df' antes/despues de --apply."
 }
 
 # ---------------------------------------------------------------------
