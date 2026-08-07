@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# Mock de `docker` para tests de cleanup-docker-images.sh.
+# Lee todos los datos de $MOCK_DATA_DIR (fixtures por escenario).
+set -uo pipefail
+DATA="${MOCK_DATA_DIR:?MOCK_DATA_DIR no definido}"
+
+case "${1:-}" in
+  version)
+    echo "MOCK_DOCKER"
+    exit 0
+    ;;
+  images)
+    cat "${DATA}/images.txt"
+    exit 0
+    ;;
+  ps)
+    shift
+    flag=""
+    for a in "$@"; do
+      case "$a" in
+        -aq) flag="-aq" ;;
+        -a)  flag="-a" ;;
+      esac
+    done
+    case "$flag" in
+      -aq) cat "${DATA}/ps-aq.txt" ;;
+      *)   cat "${DATA}/ps-image.txt" ;;
+    esac
+    exit 0
+    ;;
+  inspect)
+    shift
+    while [[ $# -gt 0 ]]; do
+      if [[ "$1" == "-f" ]]; then
+        shift 2
+      else
+        break
+      fi
+    done
+    target="${1:-}"
+    if img="$(awk -v c="${target}" '$1==c{print $2}' "${DATA}/cid2img.txt")" && [[ -n "${img}" ]]; then
+      printf '%s\n' "${img}"
+      exit 0
+    fi
+    target="${target#sha256:}"
+
+    awk -v i="${target}" '
+    {
+      key=$1
+      sub(/^sha256:/, "", key)
+
+      if (key == i) {
+        for (j=2; j<=NF; j++) {
+          print $j
+        }
+      }
+    }
+    ' "${DATA}/id2tags.txt"
+    exit 0
+    ;;
+  system)
+    shift
+    if [[ "${1:-}" == "df" ]]; then
+      shift
+      if [[ "${1:-}" == "-v" ]]; then
+        cat "${DATA}/df-v.txt"
+        exit 0
+      fi
+    fi
+    echo "df mock"
+    exit 0
+    ;;
+  image)
+    shift
+    if [[ "${1:-}" == "rm" ]]; then
+      shift
+      printf '%s\n' "$*" >> "${DATA}/rm.log"
+      echo "Untagged: $*"
+      exit 0
+    fi
+    exit 0
+    ;;
+  *)
+    echo "unknown docker command: $*" >&2
+    exit 1
+    ;;
+esac
