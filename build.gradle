@@ -75,14 +75,18 @@ tasks.named('test') {
 
 // Escaneo de vulnerabilidades de dependencias (OWASP Dependency-Check).
 //
-// Separacion de responsabilidades en CI (dos workflows):
-//   1. ACTUALIZACION NVD -> ./gradlew dependencyCheckUpdate   (.github/workflows/nvd-update.yml)
-//      - Descarga/actualiza la base NVD y el resto de fuentes externas (KEV, suppressions, ...).
-//      - Requiere NVD_API_KEY (se lee de la variable de entorno, nunca se versiona).
-//      - En CI, su cache se guarda SOLO si la tarea termina con exit 0.
-//   2. ANALISIS           -> ./gradlew dependencyCheckAnalyze (.github/workflows/security-scan.yml)
-//      - autoUpdate = false: usa unicamente la base local. Nunca descarga NVD en un PR.
-//      - Si la base local no existe, la tarea falla de forma explicita (fail-closed).
+// WORKFLOW NO BLOQUEANTE (no gate de PR): Dependency-Check se ejecuta SOLO en
+// .github/workflows/nvd-update.yml (semanal/manual). Los Pull Requests usan
+// OSV-Scanner como gate obligatorio (ver security-scan.yml) y no dependen de la
+// base NVD ni de ninguna cache.
+//
+//   - ACTUALIZACION NVD   -> ./gradlew dependencyCheckUpdate
+//     - Descarga/actualiza la base NVD y el resto de fuentes externas (KEV, suppressions, ...).
+//     - Requiere NVD_API_KEY (se lee de la variable de entorno, nunca se versiona).
+//     - En CI, su cache se guarda SOLO si la tarea termina con exit 0.
+//   - ANALISIS            -> ./gradlew dependencyCheckAnalyze (mismo workflow, tras el update)
+//     - autoUpdate = false: usa unicamente la base local recien actualizada.
+//     - Genera los reportes HTML/JSON que se suben como artifact.
 //
 // Data directory: ruta unica y estable bajo GRADLE_USER_HOME (default ~/.gradle), que es la
 //   ubicacion oficial por defecto del plugin:
@@ -99,8 +103,8 @@ dependencyCheck {
     outputDirectory = layout.buildDirectory.dir('reports/dependency-check')
     failBuildOnCVSS = 9.0
 
-    // El analisis NUNCA descarga/actualiza NVD. La base la refresca el workflow de actualizacion
-    // (nvd-update.yml) mediante la tarea dependencyCheckUpdate, y los PRs la restauran desde cache.
+    // El analisis NUNCA descarga/actualiza NVD. La base la refresca el workflow de
+    // actualizacion (nvd-update.yml) mediante la tarea dependencyCheckUpdate.
     // Si no hay base local valida, dependencyCheckAnalyze falla (no se esconde el error).
     autoUpdate = false
 

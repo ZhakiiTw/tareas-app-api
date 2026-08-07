@@ -1,21 +1,25 @@
 name: nvd-database-update
 
-# Actualiza la base NVD de OWASP Dependency-Check y guarda la cache SOLO si la
-# actualizacion termina correctamente (exit 0). Los Pull Requests restauran esta
-# cache en security-scan.yml y analizan SIN volver a descargar NVD.
+# Actualiza la base NVD de OWASP Dependency-Check y ejecuta el escaneo de
+# Dependency-Check. Workflow NO bloqueante: si falla (NVD caida, rate-limit, ...)
+# falla SOLO este workflow y NUNCA bloquea los Pull Requests.
 #
 # Disparadores:
 #   - schedule: semanal (lunes 04:00 UTC) -> mantenimiento automatico.
-#   - workflow_dispatch: refresco manual (usado para crear la PRIMERA cache).
+#   - workflow_dispatch: ejecucion manual.
 #
-# El primer arranque descarga la NVD completa (~20-40 min con NVD_API_KEY) y crea la
-# cache inicial. Las ejecuciones siguientes restauran la cache anterior y solo aplican
-# una actualizacion incremental (segundos/minutos).
+# Flujo:
+#   1. Restaura la cache anterior como baseline (actualizacion incremental).
+#   2. dependencyCheckUpdate: descarga/actualiza NVD (+ KEV, suppressions, RetireJS).
+#   3. Guarda la cache NVD SOLO si la actualizacion termino con exit 0 (nunca una
+#      DB parcial).
+#   4. dependencyCheckAnalyze (autoUpdate=false): genera los reportes con la DB
+#      recien actualizada y los sube como artifact.
+#
+# Nota: el escaneo de PR (security-scan.yml) usa OSV-Scanner y NO depende de esta
+# cache ni de NVD.
 
 on:
-  push:
-    branches:
-      - security/dependency-scan
   schedule:
     - cron: '0 4 * * 1'
   workflow_dispatch:
@@ -29,8 +33,7 @@ env:
 jobs:
   update-nvd:
     runs-on: ubuntu-latest
-    # La primera descarga completa puede tardar bastante (NVD ~374.000 CVEs). El
-    # timeout es independiente del workflow de PR, que es mucho mas corto.
+    # La primera descarga completa puede tardar bastante (NVD ~374.000 CVEs).
     timeout-minutes: 240
     steps:
       - name: Checkout
@@ -73,9 +76,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ~/.gradle/dependency-check-data
-          # La key nunca coincide en restore (incluye run_id/run_attempt de ESTA ejecucion);
-          # se restaura la cache mas reciente mediante restore-keys. En el primer arranque
-          # no hay cache y se descarga la NVD completa.
+          # La key nunca coincide en restore (incluye run_id/run_attempt de ESTA
+          # ejecucion); se restaura la cache mas reciente mediante restore-keys.
+          # En el primer arranque no hay cache y se descarga la NVD completa.
           key: dependency-check-${{ runner.os }}-${{ steps.dc-version.outputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             dependency-check-${{ runner.os }}-${{ steps.dc-version.outputs.version }}-
@@ -92,7 +95,7 @@ jobs:
         run: |
           DB=$(find "$HOME/.gradle/dependency-check-data" -name 'odc.mv.db' -size +50M -print -quit 2>/dev/null)
           if [ -z "$DB" ]; then
-            echo "::error::La base NVD (odc.mv.db) no existe o es demasiado pequena tras dependencyCheckUpdate. No se guarda ninguna cache parcial."
+            echo "::error::La base NVD (odc.mv.db) no existe o es demasiado pequena tras dependencyCheckUpdate. No se guarda ninguna cache."
             exit 1
           fi
           echo "NVD database OK: $DB"
@@ -103,3 +106,14 @@ jobs:
         with:
           path: ~/.gradle/dependency-check-data
           key: dependency-check-${{ runner.os }}-${{ steps.dc-version.outputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: OWASP Dependency-Check analyze (autoUpdate disabled, report only)
+        run: ./gradlew dependencyCheckAnalyze --console=plain
+
+      - name: Upload Dependency-Check reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-reports
+          path: build/reports/dependency-check/
+          retention-days: 30

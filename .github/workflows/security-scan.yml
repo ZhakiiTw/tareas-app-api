@@ -1,11 +1,12 @@
 name: security-scan
 
-# Analisis de seguridad de cada Pull Request. NO descarga NVD: restaura la cache
-# generada por el workflow nvd-database-update.yml (la base NVD se actualiza por
-# separado y con cache). Si no hay cache NVD valida, el job FALLA de forma clara.
+# Analisis de seguridad de cada Pull Request. No depende de NVD ni de ninguna
+# cache pesada: genera el SBOM, lo escanea con OSV-Scanner (gate obligatorio del
+# PR) y ejecuta tests + build.
 #
-# Flujo: restore cache NVD -> verificar cache -> SBOM -> Dependency-Check (sin
-# actualizar NVD) -> OSV-Scanner -> tests -> build.
+# El escaneo OWASP Dependency-Check se ejecuta por separado y de forma NO
+# bloqueante en nvd-update.yml (semanal/manual), que es el unico lugar donde se
+# descarga/actualiza la base NVD.
 
 on:
   pull_request:
@@ -19,7 +20,6 @@ permissions:
 jobs:
   security-scan:
     runs-on: ubuntu-latest
-    # Con la cache caliente el analisis dura segundos/minutos; timeout corto a proposito.
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -40,49 +40,13 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle', '**/gradle-wrapper.properties') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      - name: Extract Dependency-Check version
-        id: dc-version
-        run: |
-          VERSION=$(sed -n "s/.*org\.owasp\.dependencycheck' version '\([0-9][0-9.]*\)'.*/\1/p" build.gradle)
-          if [ -z "$VERSION" ]; then
-            echo "ERROR: no se pudo extraer la version del plugin org.owasp.dependencycheck de build.gradle" >&2
-            exit 1
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Restore Dependency-Check NVD cache
-        id: nvd-restore
-        uses: actions/cache/restore@v4
-        with:
-          path: ~/.gradle/dependency-check-data
-          # La key exacta nunca coincide (incluye run_id/run_attempt de esta ejecucion);
-          # restore-keys restaura la cache NVD mas reciente guardada por nvd-database-update.
-          # fail-on-cache-miss=true: si NO existe cache NVD, el job falla (fail-closed).
-          key: dependency-check-${{ runner.os }}-${{ steps.dc-version.outputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            dependency-check-${{ runner.os }}-${{ steps.dc-version.outputs.version }}-
-            dependency-check-${{ runner.os }}-
-          fail-on-cache-miss: true
-
-      - name: Verify NVD database cache is available
-        run: |
-          DB=$(find "$HOME/.gradle/dependency-check-data" -name 'odc.mv.db' -size +1M -print -quit 2>/dev/null)
-          if [ -z "$DB" ]; then
-            echo "::error::Dependency-Check NVD database cache is unavailable. Run the NVD update workflow."
-            exit 1
-          fi
-          echo "NVD database cache OK: $DB"
-
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       - name: SBOM CycloneDX
         run: ./gradlew cyclonedxDirectBom --console=plain
 
-      - name: OWASP Dependency-Check (autoUpdate disabled, uses cached NVD)
-        run: ./gradlew dependencyCheckAnalyze --console=plain
-
-      - name: OSV-Scanner (contained)
+      - name: OSV-Scanner (gate obligatorio de PR)
         run: |
           docker run --rm \
             -v "$PWD:/src" \
@@ -91,6 +55,24 @@ jobs:
             --experimental-exclude=/src/build --experimental-exclude=/src/.gradle \
             --format=json --output-file=/src/build/reports/osv-scanner/osv-results.json \
             /src/build/reports/cyclonedx-direct/bom.json
+          python3 - <<'PY'
+          import json, sys
+          path = "build/reports/osv-scanner/osv-results.json"
+          with open(path) as f:
+              data = json.load(f)
+          vulns = []
+          for r in data.get("results", []):
+              for p in r.get("packages", []):
+                  pkg = p.get("package", {})
+                  for v in p.get("vulnerabilities", []):
+                      vulns.append((v.get("id"), pkg.get("name"), pkg.get("version")))
+          if vulns:
+              print("::error::OSV-Scanner encontro vulnerabilidades confirmadas:")
+              for vid, name, ver in vulns:
+                  print(f"::error::  - {vid} {name}@{ver}")
+              sys.exit(1)
+          print("OSV-Scanner: 0 vulnerabilidades")
+          PY
 
       - name: Tests
         run: ./gradlew test --console=plain
@@ -104,7 +86,6 @@ jobs:
         with:
           name: security-reports
           path: |
-            build/reports/dependency-check/
             build/reports/osv-scanner/
             build/reports/cyclonedx-direct/
           retention-days: 14
