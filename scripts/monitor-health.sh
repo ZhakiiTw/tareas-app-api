@@ -28,7 +28,8 @@ set -uo pipefail
 #   DISK_WARN, DISK_CRIT, INODE_WARN, INODE_CRIT,
 #   BACKUP_WARN_HOURS, BACKUP_CRIT_HOURS,
 #   PROJECT_DIR, BACKUP_DIR, STATE_FILE, FAILED_SHA_FILE, CD_LOG_FILE,
-#   LOCAL_HEALTH_URL, PUBLIC_HEALTH_URL
+#   LOCAL_HEALTH_URL, PUBLIC_HEALTH_URL, CF_READY_URL,
+#   CLOUDFLARED_READY_RETRIES, CLOUDFLARED_READY_TIMEOUT, CLOUDFLARED_READY_DELAY
 # =====================================================================
 
 # ---- Configuracion (umbrales con defaults) ---------------------------
@@ -56,6 +57,12 @@ CD_LOG_FILE="${CD_LOG_FILE:-${PROJECT_DIR}/logs/cd-deploy.log}"
 
 LOCAL_HEALTH_URL="${LOCAL_HEALTH_URL:-http://127.0.0.1:8080/actuator/health}"
 PUBLIC_HEALTH_URL="${PUBLIC_HEALTH_URL:-https://donit-api.marfern.dev/actuator/health}"
+
+# Endpoint /ready de cloudflared (loopback, metrics). Read-only.
+CF_READY_URL="${CF_READY_URL:-http://127.0.0.1:20241/ready}"
+CLOUDFLARED_READY_RETRIES="${CLOUDFLARED_READY_RETRIES:-3}"
+CLOUDFLARED_READY_TIMEOUT="${CLOUDFLARED_READY_TIMEOUT:-5}"
+CLOUDFLARED_READY_DELAY="${CLOUDFLARED_READY_DELAY:-2}"
 
 BACKUP_TIMER_USER="tareas-app-db-backup.timer"
 BACKUP_SERVICE_USER="tareas-app-db-backup.service"
@@ -89,6 +96,39 @@ check_http() {
     if resp="$(curl -fsS --max-time "${timeout}" "${url}" 2>/dev/null)" \
        && printf '%s' "${resp}" | jq -e '.status == "UP"' >/dev/null 2>&1; then
       return 0
+    fi
+    [[ "${i}" -lt "${retries}" ]] && sleep "${delay}"
+  done
+  return 1
+}
+
+# check_cloudflared_ready retries timeout delay
+#   Consulta GET /ready (loopback, read-only). No usa check_http: ese exige
+#   .status == "UP" (Actuator) y aqui el contrato es .status == 200 numerico +
+#   .readyConnections >= 1. Establece:
+#     CF_READY_OK     -> 1 si el endpoint esta listo
+#     CF_READY_STATE  -> ok | degraded (conns==0) | down (no responde/JSON invalido)
+#     CF_READY_CONNS  -> readyConnections numerico (o vacio)
+#   readyConnections==0 es un estado definitivo: no se reintenta.
+#   down se reintenta (transitorio) hasta agotar retries.
+check_cloudflared_ready() {
+  local retries="$1" timeout="$2" delay="$3" i resp
+  CF_READY_OK=0
+  CF_READY_STATE="down"
+  CF_READY_CONNS=""
+  for ((i = 1; i <= retries; i++)); do
+    if resp="$(curl -fsS --max-time "${timeout}" "${CF_READY_URL}" 2>/dev/null)"; then
+      if printf '%s' "${resp}" | jq -e '.status == 200 and (.readyConnections | type == "number") and (.readyConnections >= 1)' >/dev/null 2>&1; then
+        CF_READY_OK=1
+        CF_READY_STATE="ok"
+        CF_READY_CONNS="$(printf '%s' "${resp}" | jq -r '.readyConnections' 2>/dev/null || true)"
+        return 0
+      fi
+      if printf '%s' "${resp}" | jq -e '.status == 200 and (.readyConnections | type == "number") and (.readyConnections == 0)' >/dev/null 2>&1; then
+        CF_READY_STATE="degraded"
+        CF_READY_CONNS="0"
+        return 1
+      fi
     fi
     [[ "${i}" -lt "${retries}" ]] && sleep "${delay}"
   done
@@ -302,6 +342,35 @@ main() {
     add_result OK cloudflared "running (restarts=${cf_restarts:-0})"
   else
     add_result CRITICAL cloudflared "State.Status=${cf_status}"
+  fi
+
+  # ---- 6b. cloudflared-ready --------------------------------------------------
+  # /ready (loopback) = diagnostico local del tunel. api-publica = señal funcional
+  # end-to-end. /ready por si solo NO se eleva a CRITICAL: requiere ademas caida
+  # de api-publica con api-local UP (tunel/edge realmente degradado). Si api-local
+  # tambien DOWN, el CRITICAL total ya lo aportan api-local/api-publica (regla E:
+  # no duplicar ruido). Si el contenedor no corre, check cloudflared ya es CRITICAL.
+  check_cloudflared_ready "${CLOUDFLARED_READY_RETRIES}" "${CLOUDFLARED_READY_TIMEOUT}" "${CLOUDFLARED_READY_DELAY}"
+  if [[ "${cf_status}" != "running" ]]; then
+    add_result OK cloudflared-ready "skip: contenedor no running o sin dato (cubierto por cloudflared)"
+  elif [[ "${CF_READY_STATE}" == "ok" ]]; then
+    add_result OK cloudflared-ready "readyConnections=${CF_READY_CONNS}"
+  elif [[ "${CF_READY_STATE}" == "degraded" ]]; then
+    if (( public_up == 1 )); then
+      add_result WARNING cloudflared-ready "readyConnections=0 pero API pública UP"
+    elif (( local_up == 1 )); then
+      add_result CRITICAL cloudflared-ready "readyConnections=0 y API pública DOWN (tunel/edge degradado)"
+    else
+      add_result WARNING cloudflared-ready "readyConnections=0 y API pública DOWN con API local DOWN (ya CRITICAL en api-local)"
+    fi
+  else
+    if (( public_up == 1 )); then
+      add_result WARNING cloudflared-ready "/ready no disponible pero API pública UP"
+    elif (( local_up == 1 )); then
+      add_result CRITICAL cloudflared-ready "/ready no disponible y API pública DOWN (tunel/edge degradado)"
+    else
+      add_result WARNING cloudflared-ready "/ready no disponible y API pública DOWN con API local DOWN (ya CRITICAL en api-local)"
+    fi
   fi
 
   # ---- 7. Timer CD ----------------------------------------------------------
