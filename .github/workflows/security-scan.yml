@@ -1,0 +1,81 @@
+name: security-scan
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Cache Dependency-Check NVD data
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/dependency-check-data
+          key: dependency-check-${{ runner.os }}
+          restore-keys: dependency-check-${{ runner.os }}-
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Tests
+        run: ./gradlew test --console=plain
+
+      - name: Build
+        run: ./gradlew build --console=plain
+
+      - name: SBOM CycloneDX
+        run: ./gradlew cyclonedxDirectBom --console=plain
+
+      - name: OWASP Dependency-Check
+        run: ./gradlew dependencyCheckAnalyze --console=plain
+
+      - name: OSV-Scanner (contained)
+        run: |
+          docker run --rm \
+            -v "$PWD:/src" \
+            ghcr.io/google/osv-scanner:v2.4.0 \
+            scan \
+            --experimental-exclude=/src/build --experimental-exclude=/src/.gradle \
+            --format=json --output-file=/src/build/reports/osv-scanner/osv-results.json \
+            /src/build/reports/cyclonedx-direct/bom.json
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            build/reports/dependency-check/
+            build/reports/osv-scanner/
+            build/reports/cyclonedx-direct/
+          retention-days: 14

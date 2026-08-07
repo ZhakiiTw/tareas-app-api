@@ -5,6 +5,14 @@ build/
 !**/src/main/**/build/
 !**/src/test/**/build/
 
+### Seguridad / escaneos ###
+# Informes generados por herramientas de analisis (ya cubiertos por build/, refuerzo explicito)
+build/reports/dependency-check/
+build/reports/osv-scanner/
+build/reports/cyclonedx*/
+# Cache local de la base NVD si se configura data.directory dentro del proyecto
+dependency-check-data/
+
 ### Local deployment ###
 .env
 .env.*
