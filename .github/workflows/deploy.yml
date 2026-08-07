@@ -1,0 +1,140 @@
+name: deploy
+
+# Construye y publica la imagen de la API en GHCR. NO despliega en el servidor:
+# el servidor detecta el SHA nuevo con cd-poll.sh (timer futuro, no activado aun)
+# y ejecuta cd-deploy.sh.
+#
+# - push a master       -> publica ghcr.io/...:<sha12> y ghcr.io/...:master
+# - workflow_dispatch   -> publica SOLO ghcr.io/...:<sha12> del SHA indicado
+#                          (redeploy/rollback manual; no toca la etiqueta master)
+#
+# Autenticacion GHCR con GITHUB_TOKEN. Sin PAT, sin secretos SSH.
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: 'Commit SHA a publicar en GHCR (redeploy/rollback manual). Vacio = master.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/marfern2/tareas-app-api
+
+jobs:
+  verify-and-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha || github.sha }}
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Tests
+        run: ./gradlew test --console=plain
+
+      - name: SBOM CycloneDX
+        run: ./gradlew cyclonedxDirectBom --console=plain
+
+      # Gate de seguridad antes de publicar: mismo criterio que security-scan.yml
+      # (OSV-Scanner fijado a v2.4.0). No depende de artefactos de otros workflows.
+      - name: OSV gate
+        shell: bash
+        run: |
+          mkdir -p build/reports/osv-scanner
+          docker run --rm \
+            -v "$PWD:/src" \
+            ghcr.io/google/osv-scanner:v2.4.0 \
+            scan \
+            --experimental-exclude=/src/build \
+            --experimental-exclude=/src/.gradle \
+            --format=json \
+            --output-file=/src/build/reports/osv-scanner/osv-results.json \
+            /src/build/reports/cyclonedx-direct/bom.json
+
+          python3 - <<'PY'
+          import json
+          import sys
+
+          data = json.load(open("build/reports/osv-scanner/osv-results.json"))
+          vulns = []
+          for result in data.get("results", []):
+              for package_result in result.get("packages", []):
+                  for vulnerability in package_result.get("vulnerabilities", []):
+                      vulns.append(vulnerability.get("id", "unknown"))
+
+          if vulns:
+              print("::error::OSV gate: vulnerabilidades encontradas:", vulns)
+              sys.exit(1)
+          print("OSV gate OK: 0 vulnerabilidades")
+          PY
+
+      - name: Compute image tags
+        id: meta
+        shell: bash
+        run: |
+          SHA="${{ inputs.commit_sha || github.sha }}"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "short=${SHA:0:12}" >> "$GITHUB_OUTPUT"
+          TAGS="${IMAGE}:${SHA:0:12}"
+          if [ -z "${{ inputs.commit_sha }}" ]; then
+            TAGS="${TAGS},${IMAGE}:master"
+          fi
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            BUILD_SHA=${{ steps.meta.outputs.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.meta.outputs.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
