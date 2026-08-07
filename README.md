@@ -348,13 +348,13 @@ Ejecuta:
 make backup
 ```
 
-Los archivos se guardan dentro del directorio:
+Los archivos se guardan en el servidor, fuera del repositorio:
 
 ```text
-backups/
+/srv/docker/backups/tareas-app-postgres/
 ```
 
-Cada backup incluye la fecha y la hora en su nombre. El script no elimina automáticamente los backups anteriores.
+Formato `pg_dump --format=custom` (`.dump`). Cada backup incluye la fecha y la hora en su nombre, se valida con `pg_restore --list` y se conservan los últimos 14 días. Guía completa en `docs/RECUPERACION-BACKUPS.md`.
 
 ---
 
@@ -366,11 +366,17 @@ Para evitar escrituras durante la restauración, detén primero la API:
 docker compose stop api
 ```
 
-Restaura el archivo deseado:
+Restaura el archivo deseado (los `.dump` están en `/srv/docker/backups/tareas-app-postgres/`):
 
 ```bash
-gunzip -c backups/tareas-postgres-YYYYMMDD-HHMMSS.sql.gz | docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+docker cp /srv/docker/backups/tareas-app-postgres/tareas-app-YYYYMMDD-HHMMSS.dump \
+  tareas-postgres:/tmp/restore.dump
+docker exec tareas-postgres sh -c \
+  'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+   --no-owner --no-privileges --exit-on-error /tmp/restore.dump'
 ```
+
+La guía de recuperación completa está en `docs/RECUPERACION-BACKUPS.md`.
 
 Vuelve a levantar la API:
 
