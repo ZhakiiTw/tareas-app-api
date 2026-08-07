@@ -80,6 +80,10 @@ dependencyCheck {
     formats = ['HTML', 'JSON']
     outputDirectory = layout.buildDirectory.dir('reports/dependency-check')
     failBuildOnCVSS = 9.0
+
+    nvd {
+        apiKey = System.getenv('NVD_API_KEY')
+    }
 }
 
 // SBOM CycloneDX con todas las dependencias (directas y transitivas)
