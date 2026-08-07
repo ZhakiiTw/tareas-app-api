@@ -1,23 +1,22 @@
 name: nvd-database-update
 
 # Actualiza la base NVD de OWASP Dependency-Check y ejecuta el escaneo de
-# Dependency-Check. Workflow NO bloqueante: si falla (NVD caida, rate-limit, ...)
-# falla SOLO este workflow y NUNCA bloquea los Pull Requests.
+# Dependency-Check.
 #
-# Disparadores:
-#   - schedule: semanal (lunes 04:00 UTC) -> mantenimiento automatico.
-#   - workflow_dispatch: ejecucion manual.
+# Este workflow NO bloquea los Pull Requests:
+# - los PR usan OSV-Scanner en security-scan.yml;
+# - Dependency-Check se ejecuta aquí de forma semanal o manual.
 #
 # Flujo:
-#   1. Restaura la cache anterior como baseline (actualizacion incremental).
-#   2. dependencyCheckUpdate: descarga/actualiza NVD (+ KEV, suppressions, RetireJS).
-#   3. Guarda la cache NVD SOLO si la actualizacion termino con exit 0 (nunca una
-#      DB parcial).
-#   4. dependencyCheckAnalyze (autoUpdate=false): genera los reportes con la DB
-#      recien actualizada y los sube como artifact.
+#   1. Restaura la última cache válida de Dependency-Check.
+#   2. dependencyCheckUpdate actualiza NVD/KEV/RetireJS/suppressions.
+#   3. Comprueba que existe la base.
+#   4. dependencyCheckAnalyze valida que la base realmente puede utilizarse.
+#   5. SOLO si todo termina correctamente guarda una nueva cache.
+#   6. Sube los reportes como artifact.
 #
-# Nota: el escaneo de PR (security-scan.yml) usa OSV-Scanner y NO depende de esta
-# cache ni de NVD.
+# Si NVD está caída, hay 503, DNS, rate-limit, etc., falla únicamente este
+# workflow y no afecta a los Pull Requests.
 
 on:
   schedule:
@@ -30,11 +29,19 @@ permissions:
 env:
   NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
 
+# Evita dos actualizaciones simultáneas de la misma base.
+concurrency:
+  group: dependency-check-nvd-update
+  cancel-in-progress: false
+
 jobs:
   update-nvd:
     runs-on: ubuntu-latest
-    # La primera descarga completa puede tardar bastante (NVD ~374.000 CVEs).
+
+    # La primera descarga completa puede ser lenta.
+    # Las siguientes deberían aprovechar la cache anterior.
     timeout-minutes: 240
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,63 +59,94 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle', '**/gradle-wrapper.properties') }}
-          restore-keys: gradle-${{ runner.os }}-
+          restore-keys: |
+            gradle-${{ runner.os }}-
 
       - name: Extract Dependency-Check version
         id: dc-version
+        shell: bash
         run: |
           VERSION=$(sed -n "s/.*org\.owasp\.dependencycheck' version '\([0-9][0-9.]*\)'.*/\1/p" build.gradle)
+
           if [ -z "$VERSION" ]; then
-            echo "ERROR: no se pudo extraer la version del plugin org.owasp.dependencycheck de build.gradle" >&2
+            echo "::error::No se pudo extraer la versión de org.owasp.dependencycheck desde build.gradle"
             exit 1
           fi
+
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Dependency-Check version detected: $VERSION"
 
       - name: Check NVD API key availability
+        shell: bash
         run: |
-          if [ -z "$NVD_API_KEY" ]; then
-            echo "NVD_API_KEY is NOT available" >&2
+          if [ -z "${NVD_API_KEY:-}" ]; then
+            echo "::error::NVD_API_KEY is not available"
             exit 1
           fi
+
           echo "NVD_API_KEY is available"
 
-      - name: Restore previous NVD cache (baseline for incremental update)
+      - name: Restore previous NVD cache
+        id: restore-nvd-cache
         uses: actions/cache/restore@v4
         with:
           path: ~/.gradle/dependency-check-data
-          # La key nunca coincide en restore (incluye run_id/run_attempt de ESTA
-          # ejecucion); se restaura la cache mas reciente mediante restore-keys.
-          # En el primer arranque no hay cache y se descarga la NVD completa.
+
+          # Esta key concreta no debería existir todavía.
+          # restore-keys recupera la cache válida más reciente
+          # para ESTA MISMA versión de Dependency-Check.
           key: dependency-check-${{ runner.os }}-${{ steps.dc-version.outputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}
+
           restore-keys: |
             dependency-check-${{ runner.os }}-${{ steps.dc-version.outputs.version }}-
-            dependency-check-${{ runner.os }}-
+
+      - name: Show cache status
+        shell: bash
+        run: |
+          if [ "${{ steps.restore-nvd-cache.outputs.cache-hit }}" = "true" ]; then
+            echo "Exact Dependency-Check cache restored."
+          else
+            echo "No exact cache hit. A previous compatible cache may have been restored via restore-keys."
+          fi
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Update NVD database (dependencyCheckUpdate)
+      - name: Update NVD database
         run: ./gradlew dependencyCheckUpdate --console=plain
 
-      - name: Verify NVD database before caching
-        id: verify-nvd-db
+      - name: Verify NVD database exists
+        shell: bash
         run: |
-          DB=$(find "$HOME/.gradle/dependency-check-data" -name 'odc.mv.db' -size +50M -print -quit 2>/dev/null)
+          DB=$(find "$HOME/.gradle/dependency-check-data" \
+            -type f \
+            -name 'odc.mv.db' \
+            -print -quit 2>/dev/null)
+
           if [ -z "$DB" ]; then
-            echo "::error::La base NVD (odc.mv.db) no existe o es demasiado pequena tras dependencyCheckUpdate. No se guarda ninguna cache."
+            echo "::error::Dependency-Check database odc.mv.db was not found after dependencyCheckUpdate."
             exit 1
           fi
-          echo "NVD database OK: $DB"
 
-      - name: Save NVD cache (only if the update succeeded)
+          if [ ! -s "$DB" ]; then
+            echo "::error::Dependency-Check database exists but is empty."
+            exit 1
+          fi
+
+          echo "Dependency-Check database found."
+          ls -lh "$DB"
+
+      - name: OWASP Dependency-Check analyze
+        run: ./gradlew dependencyCheckAnalyze --console=plain
+
+      # Guardamos la cache DESPUÉS de que update + analyze hayan terminado bien.
+      # Así evitamos conservar una DB que exista físicamente pero no sea utilizable.
+      - name: Save NVD cache
         if: success()
         uses: actions/cache/save@v4
         with:
           path: ~/.gradle/dependency-check-data
           key: dependency-check-${{ runner.os }}-${{ steps.dc-version.outputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}
-
-      - name: OWASP Dependency-Check analyze (autoUpdate disabled, report only)
-        run: ./gradlew dependencyCheckAnalyze --console=plain
 
       - name: Upload Dependency-Check reports
         if: always()
@@ -116,4 +154,5 @@ jobs:
         with:
           name: dependency-check-reports
           path: build/reports/dependency-check/
+          if-no-files-found: ignore
           retention-days: 30
