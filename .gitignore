@@ -8,7 +8,6 @@ build/
 ### Local deployment ###
 .env
 .env.*
-!.env.example
 logs/
 *.log
 backups/
