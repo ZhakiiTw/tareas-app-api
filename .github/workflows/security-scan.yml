@@ -1,0 +1,143 @@
+name: security-scan
+
+# Analisis de seguridad de cada Pull Request.
+# No depende de NVD ni de ninguna cache pesada:
+# - genera SBOM CycloneDX;
+# - escanea el SBOM con OSV-Scanner;
+# - OSV actua como gate obligatorio;
+# - ejecuta tests y build.
+#
+# OWASP Dependency-Check se ejecuta por separado en nvd-update.yml
+# de forma semanal/manual y NO bloquea los Pull Requests.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: SBOM CycloneDX
+        run: ./gradlew cyclonedxDirectBom --console=plain
+
+      - name: Verify SBOM exists
+        shell: bash
+        run: |
+          SBOM="build/reports/cyclonedx-direct/bom.json"
+
+          if [ ! -s "$SBOM" ]; then
+            echo "::error::CycloneDX SBOM was not generated: $SBOM"
+            exit 1
+          fi
+
+          echo "CycloneDX SBOM generated successfully."
+
+      - name: OSV-Scanner
+        shell: bash
+        run: |
+          mkdir -p build/reports/osv-scanner
+
+          docker run --rm \
+            -v "$PWD:/src" \
+            ghcr.io/google/osv-scanner:v2.4.0 \
+            scan \
+            --experimental-exclude=/src/build \
+            --experimental-exclude=/src/.gradle \
+            --format=json \
+            --output-file=/src/build/reports/osv-scanner/osv-results.json \
+            /src/build/reports/cyclonedx-direct/bom.json
+
+      - name: OSV vulnerability gate
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          path = "build/reports/osv-scanner/osv-results.json"
+
+          if not os.path.isfile(path):
+              print(f"::error::OSV report was not generated: {path}")
+              sys.exit(1)
+
+          try:
+              with open(path, encoding="utf-8") as f:
+                  data = json.load(f)
+          except (OSError, json.JSONDecodeError) as exc:
+              print(f"::error::Unable to read OSV report: {exc}")
+              sys.exit(1)
+
+          vulns = []
+
+          for result in data.get("results", []):
+              for package_result in result.get("packages", []):
+                  package = package_result.get("package", {})
+                  name = package.get("name", "unknown")
+                  version = package.get("version", "unknown")
+
+                  for vulnerability in package_result.get("vulnerabilities", []):
+                      vuln_id = vulnerability.get("id", "unknown")
+                      vulns.append((vuln_id, name, version))
+
+          if vulns:
+              print(
+                  f"::error::OSV-Scanner found "
+                  f"{len(vulns)} vulnerability finding(s):"
+              )
+
+              for vuln_id, name, version in vulns:
+                  print(f"::error::  - {vuln_id} {name}@{version}")
+
+              sys.exit(1)
+
+          print("OSV-Scanner: 0 vulnerabilities")
+          PY
+
+      - name: Tests
+        run: ./gradlew test --console=plain
+
+      - name: Build
+        run: ./gradlew build --console=plain
+
+      - name: Upload security reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            build/reports/osv-scanner/
+            build/reports/cyclonedx-direct/
+          if-no-files-found: warn
+          retention-days: 14

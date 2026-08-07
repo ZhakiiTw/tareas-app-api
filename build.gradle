@@ -2,6 +2,8 @@ plugins {
     id 'java'
     id 'org.springframework.boot' version '4.0.7'
     id 'io.spring.dependency-management' version '1.1.7'
+    id 'org.owasp.dependencycheck' version '13.0.0'
+    id 'org.cyclonedx.bom' version '3.3.0'
 }
 
 group = 'com.tareas.app'
@@ -12,6 +14,19 @@ java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(21)
     }
+}
+
+// Sobreescritura puntual de versiones gestionadas por el BOM de Spring Boot 4.0.7.
+// Justificacion: CVEs confirmados por OSV-Scanner (2026-08-07). El BOM actual (4.0.7 y 4.1.0)
+// sigue publicando estas versiones vulnerables, por lo que es necesario sobrescribirlas.
+// Cambios minimos (patch level) dentro de la misma rama menor.
+ext {
+    // Jackson 2 -> 2.21.5: CVE-2026-59889 (GHSA-5gvw-p9qm-jgwh), CVE-2026-54515 (GHSA-5jmj-h7xm-6q6v), GHSA-mhm7-754m-9p8w
+    set('jackson-2-bom.version', '2.21.5')
+    // Jackson 3 -> 3.1.5: CVE-2026-59889 (GHSA-5gvw-p9qm-jgwh)
+    set('jackson-bom.version', '3.1.5')
+    // Driver PostgreSQL -> 42.7.12: CVE-2026-54291 (GHSA-j92g-9f8w-j867)
+    set('postgresql.version', '42.7.12')
 }
 
 repositories {
@@ -56,4 +71,68 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+}
+
+// Escaneo de vulnerabilidades de dependencias (OWASP Dependency-Check).
+//
+// WORKFLOW NO BLOQUEANTE (no gate de PR): Dependency-Check se ejecuta SOLO en
+// .github/workflows/nvd-update.yml (semanal/manual). Los Pull Requests usan
+// OSV-Scanner como gate obligatorio (ver security-scan.yml) y no dependen de la
+// base NVD ni de ninguna cache.
+//
+//   - ACTUALIZACION NVD   -> ./gradlew dependencyCheckUpdate
+//     - Descarga/actualiza la base NVD y el resto de fuentes externas (KEV, suppressions, ...).
+//     - Requiere NVD_API_KEY (se lee de la variable de entorno, nunca se versiona).
+//     - En CI, su cache se guarda SOLO si la tarea termina con exit 0.
+//   - ANALISIS            -> ./gradlew dependencyCheckAnalyze (mismo workflow, tras el update)
+//     - autoUpdate = false: usa unicamente la base local recien actualizada.
+//     - Genera los reportes HTML/JSON que se suben como artifact.
+//
+// Data directory: ruta unica y estable bajo GRADLE_USER_HOME (default ~/.gradle), que es la
+//   ubicacion oficial por defecto del plugin:
+//     <GRADLE_USER_HOME>/dependency-check-data/<schema_version>  (actualmente .../11.0).
+//   - La subcarpeta <schema_version> la anade el propio plugin, de modo que al cambiar de version
+//     (o schema) se usa un directorio nuevo sin corromper la base existente.
+//   - En GitHub Actions GRADLE_USER_HOME es ~/.gradle, por lo que la cache de los workflows apunta
+//     a ~/.gradle/dependency-check-data (ver .github/workflows/nvd-update.yml y security-scan.yml).
+//   - No se versiona (ver .gitignore) y no contiene secretos.
+def dcGradleUserHome = System.getenv('GRADLE_USER_HOME') ?: "${System.getProperty('user.home')}/.gradle"
+
+dependencyCheck {
+    formats = ['HTML', 'JSON']
+    outputDirectory = layout.buildDirectory.dir('reports/dependency-check')
+    failBuildOnCVSS = 9.0
+
+    // El analisis NUNCA descarga/actualiza NVD. La base la refresca el workflow de
+    // actualizacion (nvd-update.yml) mediante la tarea dependencyCheckUpdate.
+    // Si no hay base local valida, dependencyCheckAnalyze falla (no se esconde el error).
+    autoUpdate = false
+
+    data.directory = "${dcGradleUserHome}/dependency-check-data"
+
+    nvd {
+        apiKey = System.getenv('NVD_API_KEY')
+
+        // Tolerancia conservadora ante fallos temporales (HTTP 503/429) de la API NVD.
+        // delay: milisegundos entre llamadas a la API NVD. El default es 3500 (con key) / 8000
+        //        (sin key). Subirlo a 5000 reduce la probabilidad de provocar 503 por rate-limit
+        //        (la propia doc de NVD recomienda subir el delay ante 503 con key valida).
+        delay = 5000
+
+        // maxRetryCount: reintentos por cada llamada a la API antes de abandonar (default 10).
+        //        No son reintentos agresivos: cada reintento respeta `delay`. Al agotarlos, la
+        //        actualizacion falla y el workflow de actualizacion NO guarda la cache parcial.
+        maxRetryCount = 10
+
+        // validForHours: horas que espera antes de comprobar actualizaciones de NVD (default 4).
+        //        Con la actualizacion semanal, si la ultima actualizacion tiene < 4 h no se
+        //        re-descarga; en caso contrario se actualiza de forma incremental.
+        validForHours = 4
+    }
+}
+
+// SBOM CycloneDX con todas las dependencias (directas y transitivas)
+// Uso: ./gradlew cyclonedxDirectBom  -> build/reports/cyclonedx-direct/bom.json
+tasks.cyclonedxDirectBom {
+    projectType = 'application'
 }
