@@ -24,9 +24,7 @@ services:
         max-file: "3"
 
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/marfern2/tareas-app-api:${API_IMAGE_TAG:-master}
     container_name: tareas-api
     restart: unless-stopped
     depends_on:
@@ -46,7 +44,6 @@ services:
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
     ports:
       - "127.0.0.1:${API_PORT:-8080}:8080"
-      - "127.0.0.1:5432:5432"
     networks:
       - tareas-network
     healthcheck:

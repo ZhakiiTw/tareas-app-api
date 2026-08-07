@@ -16,9 +16,15 @@ dependency-check-data/
 ### Local deployment ###
 .env
 .env.*
+!.env.example
 logs/
 *.log
 backups/
+backups-antes-deploy/
+# Estado del CD (lo crea el futuro agente de despliegue en el servidor)
+.deployed-sha
+.failed-sha
+.cd-deploy.lock
 *.pem
 *.key
 *.p12

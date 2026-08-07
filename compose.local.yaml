@@ -1,0 +1,22 @@
+# Override exclusivo de DESARROLLO LOCAL.
+#
+# Restablece el modelo build: para el servicio api, de modo que puedas
+# construir la imagen localmente sin depender de una imagen publicada en GHCR.
+#
+# IMPORTANTE:
+# - Este archivo NO se carga automaticamente. Docker Compose solo auto-fusiona
+#   compose.override.yaml; por eso este se llama compose.local.yaml.
+# - PRODUCCION: nunca usar este archivo. En produccion se usa unicamente
+#   compose.yaml (imagen ghcr.io/marfern2/tareas-app-api). Este override
+#   versionado puede existir en el servidor sin peligro, ya que no se
+#   referencia desde los comandos de despliegue.
+#
+# Uso local:
+#   docker compose -f compose.yaml -f compose.local.yaml up --build
+#   docker compose -f compose.yaml -f compose.local.yaml down
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
