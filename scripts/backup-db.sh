@@ -23,4 +23,10 @@ docker compose exec -T postgres sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -
 mv "${tmp_file}" "${backup_file}"
 trap - ERR
 
+# Retencion: conservar solo los ultimos 14 dias
+find backups -name 'tareas-postgres-*.sql.gz' -mtime +14 -delete
+
+# Permisos: el backup puede contener datos personales
+chmod 600 "${backup_file}"
+
 echo "Backup creado: ${backup_file}"

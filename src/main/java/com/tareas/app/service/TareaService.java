@@ -70,7 +70,6 @@ public class TareaService {
             validarNuevaFecha(dto.getFecha(), tarea.getFecha());
             tarea.setFecha(dto.getFecha());
         }
-        if (dto.getCompletada() != null) tarea.setCompletada(dto.getCompletada());
         if (dto.getUrgencia() != null) tarea.setUrgencia(dto.getUrgencia());
 
         if (dto.getTipoTareaId() != null) {

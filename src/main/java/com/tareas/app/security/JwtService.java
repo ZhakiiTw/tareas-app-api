@@ -22,6 +22,12 @@ public class JwtService {
     @Value("${jwt.expiration}")
     private long expirationTime;
 
+    @Value("${jwt.issuer:https://donit-api.marfern.dev}")
+    private String issuer;
+
+    @Value("${jwt.audience:tareas-app}")
+    private String audience;
+
     private SecretKey getSigningKey() {
         byte[] keyBytes = Decoders.BASE64.decode(secretKey);
         return Keys.hmacShaKeyFor(keyBytes);
@@ -43,23 +49,21 @@ public class JwtService {
     private Claims extractAllClaims(String token) {
         return Jwts.parser()
                 .verifyWith(getSigningKey())
+                .requireIssuer(issuer)
+                .requireAudience(audience)
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
     }
 
     public String generateToken(String username) {
-        Map<String, Object> claims = new HashMap<>();
-        return createToken(claims, username);
-    }
-
-    private String createToken(Map<String, Object> claims, String subject) {
         Date now = new Date();
         Date expiration = new Date(now.getTime() + expirationTime);
 
         return Jwts.builder()
-                .claims(claims)
-                .subject(subject)
+                .subject(username)
+                .issuer(issuer)
+                .audience().add(audience).and()
                 .issuedAt(now)
                 .expiration(expiration)
                 .signWith(getSigningKey())
@@ -67,8 +71,12 @@ public class JwtService {
     }
 
     public boolean isTokenValid(String token, String username) {
-        String extractedUsername = extractUsername(token);
-        return extractedUsername.equals(username) && !isTokenExpired(token);
+        try {
+            String extractedUsername = extractUsername(token);
+            return extractedUsername.equals(username) && !isTokenExpired(token);
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private boolean isTokenExpired(String token) {

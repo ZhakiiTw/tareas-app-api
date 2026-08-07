@@ -30,19 +30,20 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
 
     public UsuarioDTO registrarUsuario(RegistroDTO registroDTO) {
-        log.info("=== REGISTRO === Email: {} / Username: {}", registroDTO.getEmail(), registroDTO.getUsername());
+        String email = normalizarEmail(registroDTO.getEmail());
+        log.info("=== REGISTRO === Email: {} / Username: {}", email, registroDTO.getUsername());
 
-        usuarioRepository.findByEmail(registroDTO.getEmail())
+        usuarioRepository.findByEmail(email)
                 .ifPresent(u -> { throw new ResourceConflictException("El email ya está registrado"); });
 
-        usuarioRepository.findByUsername(registroDTO.getUsername())
+        usuarioRepository.findByUsername(registroDTO.getUsername().trim())
                 .ifPresent(u -> { throw new ResourceConflictException("El username ya está en uso"); });
 
         String passwordEncriptada = passwordEncoder.encode(registroDTO.getPassword());
 
         Usuario nuevoUsuario = Usuario.builder()
-                .username(registroDTO.getUsername())
-                .email(registroDTO.getEmail())
+                .username(registroDTO.getUsername().trim())
+                .email(email)
                 .password(passwordEncriptada)
                 .build();
 
@@ -53,15 +54,16 @@ public class AuthService {
     }
 
     public LoginResponseDTO login(LoginDTO loginDTO) {
-        log.info("=== LOGIN === Email: {}", loginDTO.getEmail());
+        String email = normalizarEmail(loginDTO.getEmail());
+        log.info("=== LOGIN === Email: {}", email);
 
         Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(loginDTO.getEmail(), loginDTO.getPassword())
+                new UsernamePasswordAuthenticationToken(email, loginDTO.getPassword())
         );
 
         // si falla, lanza BadCredentialsException (lo maneja tu GlobalExceptionHandler)
 
-        Usuario usuario = usuarioRepository.findByEmail(loginDTO.getEmail())
+        Usuario usuario = usuarioRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado"));
 
         String token = jwtService.generateToken(usuario.getEmail());
@@ -72,5 +74,9 @@ public class AuthService {
                 usuario.getUsername(),
                 usuario.getEmail()
         );
+    }
+
+    private String normalizarEmail(String email) {
+        return email == null ? null : email.trim().toLowerCase();
     }
 }

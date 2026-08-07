@@ -12,10 +12,11 @@ public class RegistroDTO {
 
     @NotBlank(message = "El email es obligatorio")
     @Email(message = "El email debe tener formato válido")
+    @Size(max = 254, message = "El email no puede exceder 254 caracteres")
     private String email;
 
     @NotBlank(message = "La contraseña es obligatoria")
-    @Size(min = 6, message = "La contraseña debe tener al menos 6 caracteres")
+    @Size(min = 6, max = 72, message = "La contraseña debe tener entre 6 y 72 caracteres")
     @Pattern(regexp = "^(?=.*[0-9])(?=.*[a-zA-Z]).+$",
             message = "La contraseña debe contener al menos una letra y un número")
     private String password;

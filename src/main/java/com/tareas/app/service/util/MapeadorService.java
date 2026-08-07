@@ -46,14 +46,13 @@ public class MapeadorService {
     public Tarea toTareaEntity(TareaCreacionDTO dto, Usuario usuario, TipoTarea tipoTarea) {
         if (dto == null) return null;
 
-        Boolean completada = dto.getCompletada() != null ? dto.getCompletada() : false;
         Integer urgencia = dto.getUrgencia() != null ? dto.getUrgencia() : 0;
 
         return Tarea.builder()
                 .titulo(dto.getTitulo())
                 .descripcion(dto.getDescripcion())
                 .fecha(dto.getFecha())
-                .completada(completada)
+                .completada(false)
                 .urgencia(urgencia)
                 .usuario(usuario)
                 .tipoTarea(tipoTarea)

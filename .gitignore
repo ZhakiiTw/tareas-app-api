@@ -10,7 +10,14 @@ build/
 .env.*
 !.env.example
 logs/
+*.log
 backups/
+*.pem
+*.key
+*.p12
+*.jks
+keystore
+credenciales*
 
 ### STS ###
 .apt_generated

@@ -60,14 +60,18 @@ cd tareas-app-api
 En Linux o macOS:
 
 ```bash
+export JWT_SECRET=$(openssl rand -base64 64)
 ./gradlew bootRun
 ```
 
 En Windows:
 
 ```powershell
+set JWT_SECRET=<valor_base64_generado>
 .\gradlew.bat bootRun
 ```
+
+El secreto JWT nunca debe ir hardcodeado en el código ni subirse al repositorio. En local se genera al vuelo; en producción se inyecta desde `.env`.
 
 ---
 
@@ -79,7 +83,8 @@ Cuando Swagger está habilitado y la API se encuentra iniciada:
 http://localhost:8080/swagger-ui/index.html
 ```
 
-Swagger puede habilitarse o deshabilitarse mediante una variable de entorno.
+Swagger puede habilitarse o deshabilitarse mediante la variable de entorno `SWAGGER_ENABLED`.
+En producción está deshabilitado por defecto (`SWAGGER_ENABLED=false`).
 
 ---
 
@@ -131,6 +136,18 @@ Authorization: Bearer <token>
 ```
 
 No deben subirse al repositorio contraseñas, secretos JWT ni archivos `.env`.
+
+### Medidas implementadas
+
+- Contraseñas cifradas con BCrypt.
+- JWT con firma HS256/384, con `iss`, `aud`, `sub` y `exp` validados.
+- Endpoints protegidos por defecto; solo `login`, `registro`, `health` y (si se habilita) Swagger son públicos.
+- Peticiones no autenticadas responden `401`; tokens inválidos o expirados también `401`.
+- Errores controlados: `400`, `401`, `403`, `404`, `405`, `409`, `429`, `500` sin stack traces ni mensajes internos.
+- Rate limiting en memoria (Bucket4j): 5 intentos/minuto/IP en `login`, 3/hora/IP en `registro` y 120 peticiones/minuto por usuario en el resto de la API.
+- Autorización por propietario: ninguna operación permite acceder a tareas o tipos de tarea de otro usuario.
+- CORS restringido a orígenes configurados, sin `*` con credenciales.
+- Actuator expone únicamente `health` sin detalles.
 
 ---
 
@@ -198,7 +215,7 @@ Para un primer despliegue dentro de una red local pueden mantenerse valores simi
 ```dotenv
 API_PORT=8080
 CORS_ALLOWED_ORIGINS=http://localhost:8080
-SWAGGER_ENABLED=true
+SWAGGER_ENABLED=false
 ```
 
 El puerto `8080` publicado en el servidor es una configuración inicial. En producción, la API debería situarse detrás de un reverse proxy con HTTPS.
