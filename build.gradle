@@ -51,10 +51,21 @@ dependencies {
     runtimeOnly 'com.h2database:h2'
     implementation 'org.postgresql:postgresql'
 
+    // Flyway (migraciones versionadas). Desactivado en produccion hasta el PR de transicion.
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
+    runtimeOnly 'org.flywaydb:flyway-database-postgresql'
+
     // TEST Solo se necesita spring-boot-starter-test
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // Testcontainers PostgreSQL: validar migraciones Flyway y Hibernate validate contra PostgreSQL real.
+    // Nota: en Testcontainers 2.x (gestionado por el BOM de Spring Boot 4.0.7, version 2.0.5) los
+    // artefactos se renombraron: org.testcontainers:testcontainers-postgresql y :testcontainers-junit-jupiter.
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.testcontainers:testcontainers-postgresql'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
 
     // JWT Dependencies - Versión actualizada
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
