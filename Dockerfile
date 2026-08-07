@@ -1,5 +1,8 @@
 # syntax=docker/dockerfile:1.7
 
+# Trazabilidad OCI: se inyecta en CI/despliegue mediante --build-arg BUILD_SHA.
+ARG BUILD_SHA=unknown
+
 FROM eclipse-temurin:21-jdk AS build
 
 WORKDIR /workspace
@@ -17,7 +20,13 @@ RUN --mount=type=cache,target=/root/.gradle ./gradlew --no-daemon clean bootJar 
 
 FROM eclipse-temurin:21-jre
 
+# ARG re-declarado en esta etapa para usarlo en LABEL
+ARG BUILD_SHA=unknown
+
 WORKDIR /app
+
+LABEL org.opencontainers.image.source="https://github.com/marfern2/tareas-app-api"
+LABEL org.opencontainers.image.revision="${BUILD_SHA}"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
