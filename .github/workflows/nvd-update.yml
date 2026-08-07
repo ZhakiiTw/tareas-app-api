@@ -13,6 +13,9 @@ name: nvd-database-update
 # una actualizacion incremental (segundos/minutos).
 
 on:
+  push:
+    branches:
+      - security/dependency-scan
   schedule:
     - cron: '0 4 * * 1'
   workflow_dispatch:
