@@ -149,8 +149,8 @@ check "modo DRY-RUN" grep -q 'Mode: DRY-RUN' <<< "$OUT_A"
 check "ninguna ajena borrable"
 ncheck grep -q 'CANDIDATE 4f6655284ab3' <<< "$OUT_A"
 check "nginx protegida" grep -q 'PROTECTED 54f2a904c251.*tag de otro repository' <<< "$OUT_A"
-check "estimacion unica ~278.1MB" grep -q '278.1 MB' <<< "$OUT_A"
-
+check "espacio real no se predetermina" \
+  grep -q 'Espacio real recuperable: no determinado' <<< "$OUT_A"
 # ---------------------------------------------------------------------
 # Escenario B: master + sha comparten IMAGE ID -> un unico ID PROTECTED
 # ---------------------------------------------------------------------
