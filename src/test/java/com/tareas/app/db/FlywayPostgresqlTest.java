@@ -63,28 +63,32 @@ class FlywayPostgresqlTest {
     private TareaRepository tareaRepository;
 
     @Test
-    @DisplayName("Flyway ejecuta V1 en PostgreSQL vacio, validate pasa y los repositorios funcionan")
+    @DisplayName("Flyway ejecuta V1+V2 en PostgreSQL vacio, validate pasa y los repositorios funcionan")
     void migracionDesdeCeroYFuncionamientoBasico() {
-        // 1. flyway_schema_history contiene exactamente V1 (version 1, success=true)
+        // 1. flyway_schema_history contiene exactamente V1 y V2 (success=true)
         List<Map<String, Object>> history = jdbcTemplate.queryForList(
                 "SELECT version, type, success FROM flyway_schema_history ORDER BY installed_rank");
-        assertThat(history).hasSize(1);
+        assertThat(history).hasSize(2);
         assertThat(history.get(0).get("version")).isEqualTo("1");
         assertThat(history.get(0).get("type")).isEqualTo("SQL");
         assertThat(history.get(0).get("success")).isEqualTo(true);
+        assertThat(history.get(1).get("version")).isEqualTo("2");
+        assertThat(history.get(1).get("type")).isEqualTo("SQL");
+        assertThat(history.get(1).get("success")).isEqualTo(true);
 
-        // 2. Flyway informa V1 como aplicada y sin pendientes
+        // 2. Flyway informa V1 y V2 como aplicadas y sin pendientes
         MigrationInfo[] applied = flyway.info().applied();
         assertThat(applied).anyMatch(m -> m.getVersion() != null && "1".equals(m.getVersion().getVersion()));
+        assertThat(applied).anyMatch(m -> m.getVersion() != null && "2".equals(m.getVersion().getVersion()));
         assertThat(flyway.info().pending()).isEmpty();
 
-        // 3. Las tres tablas existen (Hibernate validate ya ha arrancado el contexto)
+        // 3. Las tablas existen (Hibernate validate ya ha arrancado el contexto)
         List<String> tables = jdbcTemplate.queryForList(
                 "SELECT table_name FROM information_schema.tables "
-                        + "WHERE table_schema='public' AND table_name IN ('usuarios','tipos_tarea','tareas') "
+                        + "WHERE table_schema='public' AND table_name IN ('usuarios','tipos_tarea','tareas','refresh_tokens') "
                         + "ORDER BY table_name",
                 String.class);
-        assertThat(tables).containsExactly("tareas", "tipos_tarea", "usuarios");
+        assertThat(tables).containsExactly("refresh_tokens", "tareas", "tipos_tarea", "usuarios");
 
         // 4. Repositorios funcionan y la identity genera IDs
         Usuario alice = Usuario.builder()
@@ -142,6 +146,23 @@ class FlywayPostgresqlTest {
                 "INSERT INTO tareas (titulo, fecha, urgencia, tipo_tarea_id, usuario_id) "
                         + "VALUES ('check', CURRENT_DATE, 99, ?, ?)",
                 savedTipo.getId(), savedAlice.getId()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        // 9. refresh_tokens: UNIQUE token_hash realmente funciona a nivel de BD
+        jdbcTemplate.update(
+                "INSERT INTO refresh_tokens (usuario_id, token_hash, expires_at) "
+                        + "VALUES (?, ?, now() + interval '1 day')",
+                savedAlice.getId(), "hash-muy-unico");
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                "INSERT INTO refresh_tokens (usuario_id, token_hash, expires_at) "
+                        + "VALUES (?, ?, now() + interval '1 day')",
+                savedAlice.getId(), "hash-muy-unico"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        // 10. FK refresh_tokens -> usuarios: usuario inexistente -> violacion de FK
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                "INSERT INTO refresh_tokens (usuario_id, token_hash, expires_at) "
+                        + "VALUES (999999, 'hash-sin-usuario', now() + interval '1 day')"))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 }
