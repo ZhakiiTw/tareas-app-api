@@ -2,6 +2,8 @@ package com.tareas.app.controller;
 
 import com.tareas.app.dto.LoginDTO;
 import com.tareas.app.dto.LoginResponseDTO;
+import com.tareas.app.dto.RefreshRequestDTO;
+import com.tareas.app.dto.RefreshResponseDTO;
 import com.tareas.app.dto.RegistroDTO;
 import com.tareas.app.dto.UsuarioDTO;
 import com.tareas.app.service.AuthService;
@@ -28,5 +30,17 @@ public class AuthController {
     public ResponseEntity<LoginResponseDTO> login(@Valid @RequestBody LoginDTO loginDTO) {
         LoginResponseDTO response = authService.login(loginDTO);
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<RefreshResponseDTO> refresh(@Valid @RequestBody RefreshRequestDTO refreshRequestDTO) {
+        RefreshResponseDTO response = authService.refrescar(refreshRequestDTO.getRefreshToken());
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@Valid @RequestBody RefreshRequestDTO refreshRequestDTO) {
+        authService.cerrarSesion(refreshRequestDTO.getRefreshToken());
+        return ResponseEntity.noContent().build();
     }
 }

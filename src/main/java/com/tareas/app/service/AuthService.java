@@ -2,6 +2,7 @@ package com.tareas.app.service;
 
 import com.tareas.app.dto.LoginDTO;
 import com.tareas.app.dto.LoginResponseDTO;
+import com.tareas.app.dto.RefreshResponseDTO;
 import com.tareas.app.dto.RegistroDTO;
 import com.tareas.app.dto.UsuarioDTO;
 import com.tareas.app.exception.ResourceConflictException;
@@ -17,6 +18,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
 @Service
@@ -27,6 +29,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final MapeadorService mapeadorService;
     private final JwtService jwtService;
+    private final RefreshTokenService refreshTokenService;
     private final AuthenticationManager authenticationManager;
 
     public UsuarioDTO registrarUsuario(RegistroDTO registroDTO) {
@@ -53,11 +56,12 @@ public class AuthService {
         return mapeadorService.toUsuarioDTO(usuarioGuardado);
     }
 
+    @Transactional
     public LoginResponseDTO login(LoginDTO loginDTO) {
         String email = normalizarEmail(loginDTO.getEmail());
         log.info("=== LOGIN === Email: {}", email);
 
-        Authentication authentication = authenticationManager.authenticate(
+        authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(email, loginDTO.getPassword())
         );
 
@@ -67,13 +71,24 @@ public class AuthService {
                 .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado"));
 
         String token = jwtService.generateToken(usuario.getEmail());
+        String refreshToken = refreshTokenService.crearPara(usuario);
+        refreshTokenService.limpiarExpirados();
 
         return new LoginResponseDTO(
                 token,
+                refreshToken,
                 usuario.getId(),
                 usuario.getUsername(),
                 usuario.getEmail()
         );
+    }
+
+    public RefreshResponseDTO refrescar(String tokenEnClaro) {
+        return refreshTokenService.rotar(tokenEnClaro);
+    }
+
+    public void cerrarSesion(String tokenEnClaro) {
+        refreshTokenService.revocar(tokenEnClaro);
     }
 
     private String normalizarEmail(String email) {

@@ -65,15 +65,18 @@ class FlywayBaselineScenarioTest {
 
         flyway.migrate();
 
-        // 4. Historia: SOLO BASELINE v1, ninguna migracion SQL ejecutada
+        // 4. Historia: BASELINE v1 + SQL V2 (el baseline salta V1 y aplica la nueva migracion)
         List<Map<String, Object>> history = jdbc.queryForList(
                 "SELECT version, type, success FROM flyway_schema_history ORDER BY installed_rank");
-        assertThat(history).hasSize(1);
+        assertThat(history).hasSize(2);
         assertThat(history.get(0).get("version")).isEqualTo("1");
         assertThat(history.get(0).get("type")).isEqualTo("BASELINE");
         assertThat(history.get(0).get("success")).isEqualTo(true);
+        assertThat(history.get(1).get("version")).isEqualTo("2");
+        assertThat(history.get(1).get("type")).isEqualTo("SQL");
+        assertThat(history.get(1).get("success")).isEqualTo(true);
 
-        // 5. No quedan migraciones pendientes (V1 == baseline version -> no se aplica)
+        // 5. No quedan migraciones pendientes (V1 == baseline version, V2 ya aplicada)
         assertThat(flyway.info().pending()).isEmpty();
 
         // 6. Los datos NO se pierden
@@ -83,14 +86,14 @@ class FlywayBaselineScenarioTest {
         Integer countTipos = jdbc.queryForObject("SELECT count(*) FROM tipos_tarea", Integer.class);
         assertThat(countTipos).isEqualTo(1);
 
-        // 7. Las tres tablas siguen existiendo una unica vez.
+        // 7. Las tablas originales siguen existiendo una unica vez y V2 crea refresh_tokens.
         //    Si V1 se hubiera ejecutado, migrate() habria fallado por "relation already exists".
         List<String> tables = jdbc.queryForList(
                 "SELECT table_name FROM information_schema.tables "
-                        + "WHERE table_schema='public' AND table_name IN ('usuarios','tipos_tarea','tareas') "
+                        + "WHERE table_schema='public' AND table_name IN ('usuarios','tipos_tarea','tareas','refresh_tokens') "
                         + "ORDER BY table_name",
                 String.class);
-        assertThat(tables).containsExactly("tareas", "tipos_tarea", "usuarios");
+        assertThat(tables).containsExactly("refresh_tokens", "tareas", "tipos_tarea", "usuarios");
     }
 
     private String readV1Sql() throws IOException {

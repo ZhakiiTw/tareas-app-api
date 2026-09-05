@@ -111,6 +111,14 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(r, HttpStatus.UNAUTHORIZED);
     }
 
+    @ExceptionHandler(RefreshTokenNoValidoException.class)
+    public ResponseEntity<Map<String, Object>> handleRefreshTokenInvalido(RefreshTokenNoValidoException ex) {
+        log.warn("Refresh token inválido, expirado o revocado");
+        Map<String, Object> r = base(HttpStatus.UNAUTHORIZED);
+        r.put("message", "Token de refresco inválido o expirado");
+        return new ResponseEntity<>(r, HttpStatus.UNAUTHORIZED);
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException ex) {
         log.warn("Forbidden");
