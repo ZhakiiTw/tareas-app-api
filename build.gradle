@@ -27,6 +27,10 @@ ext {
     set('jackson-bom.version', '3.1.5')
     // Driver PostgreSQL -> 42.7.12: CVE-2026-54291 (GHSA-j92g-9f8w-j867)
     set('postgresql.version', '42.7.12')
+    // Log4j 2 -> 2.25.5: CVE-2026-49844 (GHSA-qv9r-c865-cp47)
+    set('log4j2.version', '2.25.5')
+    // Tomcat -> 11.0.25: CVE-2026-65905 (GHSA-9xv2-5v5q-p794), CVE-2026-65182 (GHSA-gcx9-497g-6cp6), CVE-2026-68525 (GHSA-h3x4-894j-xpx5)
+    set('tomcat.version', '11.0.25')
 }
 
 repositories {
